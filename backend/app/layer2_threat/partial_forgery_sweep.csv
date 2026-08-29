@@ -1,0 +1,8 @@
+intensity_q,mismatch_rate,threat_level,security_decision_verdict,findings_count
+0.0,0.0,CLEAN,ACCEPT,0
+0.05,0.05,CLEAN,ACCEPT,0
+0.1,0.1,ADVISORY,REJECT,1
+0.15,0.15,SUSPICIOUS,REJECT,2
+0.2,0.2,SUSPICIOUS,REJECT,2
+0.25,0.25,SUSPICIOUS,REJECT,2
+0.3,0.3,SUSPICIOUS,REJECT,2

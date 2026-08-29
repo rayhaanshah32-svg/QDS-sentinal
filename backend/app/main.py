@@ -2,12 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.endpoints import router as layer1_router
+from app.layer2_threat.api import router as layer2_router
 from app.schemas.api import HealthResponse
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="QDS Sentinel - Research-grade Quantum Digital Signatures Security Simulation Engine (Layer 1: Protocol Simulation Engine)",
+    description="QDS Sentinel - Research-grade Quantum Digital Signatures Security Simulation Engine (Layer 1: Protocol Simulation + Layer 2: Threat Detection)",
 )
 
 app.add_middleware(
@@ -19,6 +20,7 @@ app.add_middleware(
 )
 
 app.include_router(layer1_router)
+app.include_router(layer2_router)
 
 
 @app.get(
@@ -33,5 +35,5 @@ def health_check() -> HealthResponse:
         status="ok",
         app_name=settings.app_name,
         version=settings.app_version,
-        layer="Layer 1: Protocol Simulation Engine",
+        layer="Layer 1: Protocol Simulation + Layer 2: Threat Detection",
     )

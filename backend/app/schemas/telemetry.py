@@ -1,6 +1,29 @@
-from typing import Any
+from enum import Enum
+from typing import Any, Optional
 from pydantic import BaseModel, Field
 from app.schemas.protocol import SignaturePositionRecord, BasicVerificationSummary
+
+
+class AttackType(str, Enum):
+    """Enumeration of simulated QDS attack types."""
+    REPLAY = "REPLAY"
+    FULL_FORGERY = "FULL_FORGERY"
+    PARTIAL_FORGERY = "PARTIAL_FORGERY"
+    CORRECTION_TAMPERING = "CORRECTION_TAMPERING"
+    INTERCEPT_RESEND = "INTERCEPT_RESEND"
+    CHANNEL_MANIPULATION = "CHANNEL_MANIPULATION"
+    FIDELITY_DEGRADATION = "FIDELITY_DEGRADATION"
+    BOB_REPUDIATION = "BOB_REPUDIATION"
+
+
+class AttackMetadata(BaseModel):
+    """Ground-truth metadata attached to injected packets for evaluation/benchmarking."""
+    attack_id: str = Field(..., description="Unique attack instance ID")
+    attack_type: AttackType = Field(..., description="Type of attack injected")
+    intensity: float = Field(default=1.0, ge=0.0, le=1.0, description="Attack intensity q in [0, 1]")
+    target_basis: Optional[str] = Field(default=None, description="Target basis for basis-specific attacks")
+    seed: int = Field(default=42, description="Random seed used for deterministic injection")
+    description: str = Field(..., description="Human-readable description of the injected attack")
 
 
 class TeleportationEvent(BaseModel):
@@ -39,3 +62,6 @@ class ProtocolSessionResult(BaseModel):
     teleportation_events: list[TeleportationEvent] = Field(..., description="List of teleportation telemetry events")
     measurement_events: list[MeasurementEvent] = Field(..., description="List of measurement telemetry events")
     verification_summary: BasicVerificationSummary = Field(..., description="Basic verification summary")
+    attack_metadata: Optional[AttackMetadata] = Field(
+        default=None, description="Optional ground-truth attack metadata (never read by Layer 2 detectors)"
+    )
