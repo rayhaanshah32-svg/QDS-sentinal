@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import ControlPanel from './views/ControlPanel'
 import CircuitTrace from './views/CircuitTrace'
+import QuantumState from './views/QuantumState'
 import ThreatFeed from './views/ThreatFeed'
 import MetricsPanel from './views/MetricsPanel'
 import ExperimentReport from './views/ExperimentReport'
@@ -13,10 +14,12 @@ import styles from './App.module.css'
 const TABS = [
   { id: 'control',    label: 'Control Panel' },
   { id: 'circuit',    label: 'Circuit Trace' },
+  { id: 'quantum',    label: 'Quantum State' },
   { id: 'feed',       label: 'Threat Feed' },
   { id: 'metrics',    label: 'Security Metrics' },
   { id: 'experiment', label: 'Experiment Report' },
 ]
+
 
 const ATTACK_SCENARIO_LABELS = {
   REPLAY: 'Replay captured packet',
@@ -62,6 +65,7 @@ export default function App() {
   const [sessionResult, setSessionResult] = useState(null)
   const [attackMeta, setAttackMeta] = useState(null)
   const [backendOnline, setBackendOnline] = useState(null)
+  const [targetPosition, setTargetPosition] = useState(null)
 
   function applyResult(result) {
     setAssessment(result.assessment ?? null)
@@ -96,9 +100,12 @@ export default function App() {
     }
   }, [])
 
-  function handleResult(result) {
+  function handleResult(result, targetTab = 'feed', initialPosition = null) {
     applyResult(result)
-    setActiveTab('feed')
+    setActiveTab(targetTab)
+    if (initialPosition !== null && initialPosition !== undefined) {
+      setTargetPosition(initialPosition)
+    }
   }
 
   const hasResult = Boolean(assessment)
@@ -165,6 +172,14 @@ export default function App() {
         {activeTab === 'circuit' && (
           <CircuitTrace sessionResult={sessionResult} assessment={assessment} />
         )}
+        {activeTab === 'quantum' && (
+          <QuantumState
+            sessionResult={sessionResult}
+            assessment={assessment}
+            initialPosition={targetPosition}
+          />
+        )}
+
         {activeTab === 'feed' && (
           <ThreatFeed assessment={assessment} sessionResult={sessionResult} attackMeta={attackMeta} />
         )}

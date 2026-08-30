@@ -144,6 +144,51 @@ export default function ControlPanel({ onResult }) {
     })
   }
 
+  async function handleVisualizeAttack() {
+    setLoading(true)
+    setError(null)
+
+    const simulation = buildSimulationRequest(form)
+    const advancedOverrides = {
+      verification_mode: form.verification_mode,
+      s_a: parseFloat(form.s_a),
+      s_v: parseFloat(form.s_v),
+      e_honest: parseFloat(form.e_honest),
+      expected_sender_id: form.expected_sender_id || null,
+      expected_recipient_id: form.expected_recipient_id || null,
+      requested_verifier_id: form.requested_verifier_id || null,
+    }
+
+    const response = await runAttackSimulate({
+      simulation,
+      ...advancedOverrides,
+      attack_type: 'CORRECTION_TAMPERING',
+      intensity: 1.0,
+      target_basis: null,
+    })
+
+    setLoading(false)
+
+    if (response.error) {
+      setError(response.error)
+      return
+    }
+
+    const data = response.data
+    const firstTamperedIndex =
+      data.assessment?.correction_consistency?.inconsistent_positions?.[0] ?? 0
+
+    onResult(
+      {
+        assessment: data.assessment,
+        sessionResult: data.injected_session,
+        attackMeta: data.attack_metadata,
+      },
+      'quantum',
+      firstTamperedIndex
+    )
+  }
+
   const hasAttack = Boolean(form.attack_type)
 
   return (
@@ -153,25 +198,39 @@ export default function ControlPanel({ onResult }) {
         <div className={styles.quickExamples}>
           <span className={styles.quickLabel}>Quick examples:</span>
           <button
+            type="button"
             onClick={() => handleExample(getExampleClean)}
             disabled={loading}
           >
             Clean session
           </button>
           <button
+            type="button"
             onClick={() => handleExample(getExampleReplay)}
             disabled={loading}
           >
             Replay attack
           </button>
           <button
+            type="button"
             onClick={() => handleExample(getExampleForgery)}
             disabled={loading}
           >
             Digest forgery
           </button>
+          <button
+            type="button"
+            className={styles.visualizeBtn}
+            onClick={handleVisualizeAttack}
+            disabled={loading}
+            title="Simulate correction tampering and visualize first collapsed position"
+          >
+            <Zap size={11} strokeWidth={1.5} />
+            Visualize Attack
+          </button>
         </div>
       </div>
+
 
       <ErrorBanner error={error} />
 

@@ -58,6 +58,17 @@ export async function runLayer1Simulate(simulationRequest) {
   })
 }
 
+export async function getBlochState(basis, bit) {
+  return request(`/layer1/bloch-state/${basis}/${bit}`)
+}
+
+export async function getBlochTrace(simulationRequest) {
+  return request('/layer1/bloch-trace', {
+    method: 'POST',
+    body: JSON.stringify(simulationRequest),
+  })
+}
+
 export async function getExampleClean() {
   return request('/layer2/example-clean')
 }

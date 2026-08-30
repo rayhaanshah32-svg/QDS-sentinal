@@ -65,3 +65,21 @@ class ProtocolSessionResult(BaseModel):
     attack_metadata: Optional[AttackMetadata] = Field(
         default=None, description="Optional ground-truth attack metadata (never read by Layer 2 detectors)"
     )
+
+
+class BlochCoordinate(BaseModel):
+    x: float = Field(..., description="Bloch vector X coordinate in [-1.0, 1.0]")
+    y: float = Field(..., description="Bloch vector Y coordinate in [-1.0, 1.0]")
+    z: float = Field(..., description="Bloch vector Z coordinate in [-1.0, 1.0]")
+
+
+class BlochStateResponse(BaseModel):
+    basis: str = Field(..., description="Pauli preparation basis (X, Y, or Z)")
+    bit: int = Field(..., description="Prepared bit value (0 or 1)")
+    prepared_label: str = Field(..., description="Ket label of prepared quantum state (e.g. |0>, |+>, |+i>)")
+    coordinates: BlochCoordinate = Field(..., description="Bloch sphere coordinates of the prepared state")
+    is_collapsed: bool = Field(..., description="Whether measurement caused state collapse")
+    collapsed_coordinates: Optional[BlochCoordinate] = Field(
+        default=None, description="Post-measurement collapsed Bloch sphere coordinates if collapsed"
+    )
+

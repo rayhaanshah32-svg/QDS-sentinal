@@ -29,6 +29,23 @@
   padding: 3px 10px;
 }
 
+.visualizeBtn {
+  font-size: 11px;
+  padding: 3px 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  border-color: var(--color-suspicious-bar);
+  color: var(--color-suspicious);
+  background: var(--color-suspicious-bg);
+}
+
+.visualizeBtn:hover:not(:disabled) {
+  background: hsl(28, 52%, 90%);
+}
+
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
