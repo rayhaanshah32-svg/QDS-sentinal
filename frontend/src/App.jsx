@@ -7,7 +7,7 @@ import ExperimentReport from './views/ExperimentReport'
 import DecisionBanner from './components/DecisionBanner'
 import ThreatBadge from './components/ThreatBadge'
 import SimDisclaimer from './components/SimDisclaimer'
-import { checkHealth } from './api/client'
+import { checkHealth, getExampleClean, runLayer1Simulate } from './api/client'
 import { WifiOff, Activity } from 'lucide-react'
 import styles from './App.module.css'
 
@@ -28,14 +28,36 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true
-    async function verifyBackend() {
+    async function init() {
       const res = await checkHealth()
       if (mounted) {
         setBackendOnline(res.online)
       }
+      if (res.online) {
+        const [cleanAssess, cleanSession] = await Promise.all([
+          getExampleClean(),
+          runLayer1Simulate({
+            message: 'AUTHENTICATED_TRANSACTION_PAYLOAD_CLEAN',
+            sender_id: 'alice',
+            recipient_id: 'bob',
+            signature_length: 16,
+            seed: 42,
+            bell_state: 'PHI_PLUS',
+            bases_allowed: ['X', 'Y', 'Z'],
+            sequence_number: 1,
+          }),
+        ])
+        if (mounted && cleanAssess.data && cleanSession.data) {
+          setAssessment(cleanAssess.data)
+          setSessionResult(cleanSession.data)
+        }
+      }
     }
-    verifyBackend()
-    const interval = setInterval(verifyBackend, 10000)
+    init()
+    const interval = setInterval(async () => {
+      const res = await checkHealth()
+      if (mounted) setBackendOnline(res.online)
+    }, 10000)
     return () => {
       mounted = false
       clearInterval(interval)

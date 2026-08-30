@@ -34,6 +34,41 @@ function buildSimulationRequest(form) {
   }
 }
 
+function syncAttackedSession(session, assessment, attackType, intensity, targetBasis) {
+  if (!session || !session.signature_positions) return session
+  const copy = JSON.parse(JSON.stringify(session))
+  const positions = copy.signature_positions
+
+  if (attackType === 'CORRECTION_TAMPERING' && assessment?.correction_consistency?.inconsistent_positions) {
+    const inconsistentSet = new Set(assessment.correction_consistency.inconsistent_positions)
+    for (const p of positions) {
+      if (inconsistentSet.has(p.index)) {
+        let tampered = 'I'
+        if (p.expected_correction === 'I') tampered = 'X'
+        else if (p.expected_correction === 'X') tampered = 'I'
+        else if (p.expected_correction === 'Z') tampered = 'X'
+        p.actual_correction = tampered
+        p.fidelity = 0.5
+        p.final_measured_bit = 1 - p.expected_bit
+        p.is_match = false
+      }
+    }
+  } else if (attackType === 'FIDELITY_DEGRADATION' && assessment?.fidelity_analysis) {
+    const minFid = assessment.fidelity_analysis.min_fidelity || 0.70
+    for (const p of positions) {
+      p.fidelity = minFid
+    }
+  } else if (attackType === 'PARTIAL_FORGERY' || attackType === 'INTERCEPT_RESEND' || attackType === 'CHANNEL_MANIPULATION' || attackType === 'BOB_REPUDIATION') {
+    const mismatchCount = Math.round(positions.length * (assessment?.qber_analysis?.global_mismatch_rate || 0))
+    for (let i = 0; i < Math.min(mismatchCount, positions.length); i++) {
+      positions[i].final_measured_bit = 1 - positions[i].expected_bit
+      positions[i].is_match = false
+    }
+  }
+
+  return copy
+}
+
 export default function ControlPanel({ onResult }) {
   const [form, setForm] = useState({
     message: 'PAYLOAD_TRANSFER_AUTHENTIC_001',
@@ -118,23 +153,35 @@ export default function ControlPanel({ onResult }) {
 
     const attackMeta = form.attack_type ? assessmentResult.data.attack_metadata : null
 
+    let finalSession = sessionResult.error ? null : sessionResult.data
+    if (finalSession && form.attack_type) {
+      finalSession = syncAttackedSession(finalSession, assessment, form.attack_type, parseFloat(form.intensity), form.target_basis)
+    }
+
     onResult({
       assessment,
-      sessionResult: sessionResult.error ? null : sessionResult.data,
+      sessionResult: finalSession,
       attackMeta,
     })
   }
 
-  async function handleExample(fetchFn, label) {
+  async function handleExample(fetchFn, label, simParams) {
     setLoading(true)
     setError(null)
-    const result = await fetchFn()
+    const [result, sessionRes] = await Promise.all([
+      fetchFn(),
+      runLayer1Simulate(simParams),
+    ])
     setLoading(false)
     if (result.error) {
       setError(result.error)
       return
     }
-    onResult({ assessment: result.data, sessionResult: null, attackMeta: null })
+    onResult({
+      assessment: result.data,
+      sessionResult: sessionRes.error ? null : sessionRes.data,
+      attackMeta: null,
+    })
   }
 
   const hasAttack = Boolean(form.attack_type)
@@ -145,9 +192,51 @@ export default function ControlPanel({ onResult }) {
         <h2>Simulation Control Panel</h2>
         <div className={styles.quickExamples}>
           <span className={styles.quickLabel}>Quick examples:</span>
-          <button onClick={() => handleExample(getExampleClean, 'clean')} disabled={loading}>Clean session</button>
-          <button onClick={() => handleExample(getExampleReplay, 'replay')} disabled={loading}>Replay attack</button>
-          <button onClick={() => handleExample(getExampleForgery, 'forgery')} disabled={loading}>Digest forgery</button>
+          <button
+            onClick={() => handleExample(getExampleClean, 'clean', {
+              message: 'AUTHENTICATED_TRANSACTION_PAYLOAD_CLEAN',
+              sender_id: 'alice',
+              recipient_id: 'bob',
+              signature_length: 16,
+              seed: 42,
+              bell_state: 'PHI_PLUS',
+              bases_allowed: ['X', 'Y', 'Z'],
+              sequence_number: 1,
+            })}
+            disabled={loading}
+          >
+            Clean session
+          </button>
+          <button
+            onClick={() => handleExample(getExampleReplay, 'replay', {
+              message: 'AUTHENTICATED_TRANSACTION_REPLAY_TEST',
+              sender_id: 'alice',
+              recipient_id: 'bob',
+              signature_length: 16,
+              seed: 99,
+              bell_state: 'PHI_PLUS',
+              bases_allowed: ['X', 'Y', 'Z'],
+              sequence_number: 1,
+            })}
+            disabled={loading}
+          >
+            Replay attack
+          </button>
+          <button
+            onClick={() => handleExample(getExampleForgery, 'forgery', {
+              message: 'AUTHENTIC_MESSAGE',
+              sender_id: 'alice',
+              recipient_id: 'bob',
+              signature_length: 16,
+              seed: 77,
+              bell_state: 'PHI_PLUS',
+              bases_allowed: ['X', 'Y', 'Z'],
+              sequence_number: 1,
+            })}
+            disabled={loading}
+          >
+            Digest forgery
+          </button>
         </div>
       </div>
 

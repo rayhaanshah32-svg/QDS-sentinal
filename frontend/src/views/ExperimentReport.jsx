@@ -182,13 +182,6 @@ export default function ExperimentReport() {
               tick={{ fontSize: 10, fontFamily: 'var(--font-mono)', fill: 'var(--text-muted)' }}
             />
             <Tooltip content={<CustomTooltip />} />
-            <Legend
-              formatter={value => (
-                <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                  {value}
-                </span>
-              )}
-            />
             <ReferenceLine y={0.10} stroke="hsl(38, 62%, 44%)" strokeDasharray="4 3" label={{ value: 's_a=0.10', position: 'right', fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'hsl(38, 62%, 44%)' }} />
             <ReferenceLine y={0.20} stroke="hsl(28, 60%, 46%)" strokeDasharray="4 3" label={{ value: 's_v=0.20', position: 'right', fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'hsl(28, 60%, 46%)' }} />
             <Line
