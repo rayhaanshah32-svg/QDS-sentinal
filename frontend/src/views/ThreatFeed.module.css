@@ -1,0 +1,156 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.empty {
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.sessionLine {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: 4px;
+  font-size: 10px;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.categoryLabel {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.feedList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.finding {
+  display: flex;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  overflow: hidden;
+}
+
+.findingBar {
+  width: 4px;
+  flex-shrink: 0;
+}
+
+.findingContent {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+}
+
+.findingMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.findingCategory {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.findingText {
+  font-size: 11px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.critical {
+  background: var(--color-critical-bg);
+  border-color: hsl(6, 44%, 86%);
+}
+
+.critical .findingBar { background: var(--color-critical-bar); }
+.critical .findingCategory { color: var(--color-critical); }
+.critical .findingText { color: var(--color-critical); }
+
+.suspicious {
+  background: var(--color-suspicious-bg);
+  border-color: hsl(28, 46%, 86%);
+}
+
+.suspicious .findingBar { background: var(--color-suspicious-bar); }
+.suspicious .findingCategory { color: var(--color-suspicious); }
+.suspicious .findingText { color: var(--color-suspicious); }
+
+.advisory {
+  background: var(--color-advisory-bg);
+  border-color: hsl(38, 48%, 86%);
+}
+
+.advisory .findingBar { background: var(--color-advisory-bar); }
+.advisory .findingCategory { color: var(--color-advisory); }
+.advisory .findingText { color: var(--color-advisory); }
+
+.clean {
+  background: var(--color-accept-bg);
+  border-color: hsl(142, 22%, 86%);
+}
+
+.clean .findingBar { background: var(--color-accept-bar); }
+.clean .findingCategory { color: var(--color-accept); }
+.clean .findingText { color: var(--color-accept); }
+
+.identitySection {
+  background: var(--bg-base);
+  border: var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+
+.identityTitle {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.identityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2);
+}
+
+.identityGrid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.idLabel {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.okText { color: var(--color-accept); }
+.failText { color: var(--color-critical); }

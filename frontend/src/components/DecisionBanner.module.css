@@ -1,0 +1,39 @@
+.banner {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  border-left-width: 4px;
+}
+
+.verdict {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  flex-shrink: 0;
+}
+
+.detail {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: inherit;
+  opacity: 0.8;
+  word-break: break-all;
+}
+
+.accept {
+  background: var(--color-accept-bg);
+  border-color: hsl(142, 22%, 78%);
+  border-left-color: var(--color-accept-bar);
+  color: var(--color-accept);
+}
+
+.reject {
+  background: var(--color-critical-bg);
+  border-color: hsl(6, 44%, 80%);
+  border-left-color: var(--color-critical-bar);
+  color: var(--color-critical);
+}

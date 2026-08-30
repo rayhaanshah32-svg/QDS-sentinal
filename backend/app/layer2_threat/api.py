@@ -1,25 +1,7 @@
-"""
-Layer 2 – REST API Endpoints
-
-Routes:
-    POST  /api/v1/layer2/assess          – run Layer 1 simulation + Layer 2 assessment
-    POST  /api/v1/layer2/assess-existing – assess an already-computed ProtocolSessionResult
-    POST  /api/v1/layer2/attack-simulate – inject attack + run Layer 2 assessment
-    GET   /api/v1/layer2/example-clean   – deterministic clean example
-    GET   /api/v1/layer2/example-replay  – deterministic replay example (second call)
-    GET   /api/v1/layer2/example-forgery – deterministic digest-forgery example
-
-Verification mode cross-wire protection
------------------------------------------
-Each endpoint accepts an optional `verification_mode` parameter and validates
-that s_a is ONLY applied when mode=direct and s_v ONLY when mode=forwarded.
-This is enforced by the engine, not just by convention.
-"""
-
 from __future__ import annotations
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel, Field
 
 from app.schemas.api import SimulationRequest
@@ -33,63 +15,66 @@ from app.layer2_threat.attacks import inject_attack
 
 router = APIRouter(prefix="/api/v1/layer2", tags=["Layer 2 Threat Detection"])
 
-# Isolated ledger instance for deterministic example endpoints
 _example_ledger = ReplayLedger(max_size=100)
 
 
 class AssessRequest(BaseModel):
-    """Combined Layer 1 simulation + Layer 2 threat assessment request."""
-
     simulation: SimulationRequest = Field(
         ..., description="Layer 1 simulation parameters"
     )
     verification_mode: VerificationMode = Field(
         default=VerificationMode.DIRECT,
-        description=(
-            "Which verification role to evaluate against. "
-            "'direct' → Bob, uses s_a threshold. "
-            "'forwarded' → Charlie, uses s_v threshold. "
-            "MUST NOT be cross-wired."
-        ),
+        description="Verification role to evaluate against (direct or forwarded)",
     )
     s_a: Optional[float] = Field(
         default=None,
         ge=0.0,
         le=1.0,
-        description="Override s_a threshold (default from config: 0.10). Derivation: Amiri et al. 2016 Eq.19",
+        description="Override s_a threshold",
     )
     s_v: Optional[float] = Field(
         default=None,
         ge=0.0,
         le=1.0,
-        description="Override s_v threshold (default from config: 0.20). Derivation: Amiri et al. 2016 Eq.19",
+        description="Override s_v threshold",
     )
     e_honest: Optional[float] = Field(
         default=None,
         ge=0.0,
         lt=1.0,
-        description="Override honest error rate for calibration (default 0.0 = NoNoise baseline)",
+        description="Override honest error rate",
+    )
+    expected_sender_id: Optional[str] = Field(
+        default=None,
+        description="Optional expected sender identifier for verifier authorization check",
+    )
+    expected_recipient_id: Optional[str] = Field(
+        default=None,
+        description="Optional expected recipient identifier for verifier authorization check",
+    )
+    requested_verifier_id: Optional[str] = Field(
+        default=None,
+        description="Optional requesting verifier identifier for verifier authorization check",
     )
 
 
 class AssessExistingRequest(BaseModel):
-    """Assess an already-computed ProtocolSessionResult without re-running Layer 1."""
-
     session: ProtocolSessionResult = Field(
         ..., description="Layer 1 ProtocolSessionResult to assess"
     )
     verification_mode: VerificationMode = Field(
         default=VerificationMode.DIRECT,
-        description="Verification role (direct → Bob/s_a, forwarded → Charlie/s_v)",
+        description="Verification role (direct or forwarded)",
     )
     s_a: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     s_v: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     e_honest: Optional[float] = Field(default=None, ge=0.0, lt=1.0)
+    expected_sender_id: Optional[str] = Field(default=None)
+    expected_recipient_id: Optional[str] = Field(default=None)
+    requested_verifier_id: Optional[str] = Field(default=None)
 
 
 class AttackSimulateRequest(BaseModel):
-    """Combined Layer 1 simulation, attack injection, and Layer 2 threat assessment request."""
-
     simulation: SimulationRequest = Field(
         ..., description="Layer 1 simulation parameters"
     )
@@ -104,22 +89,23 @@ class AttackSimulateRequest(BaseModel):
     )
     target_basis: Optional[str] = Field(
         default=None,
-        description="Target basis for basis-specific attacks (e.g. 'Z')",
+        description="Target basis for basis-specific attacks",
     )
     verification_mode: VerificationMode = Field(
         default=VerificationMode.DIRECT,
-        description="Verification role (direct -> Bob, forwarded -> Charlie)",
+        description="Verification role",
     )
     s_a: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     s_v: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     e_honest: Optional[float] = Field(default=None, ge=0.0, lt=1.0)
+    expected_sender_id: Optional[str] = Field(default=None)
+    expected_recipient_id: Optional[str] = Field(default=None)
+    requested_verifier_id: Optional[str] = Field(default=None)
 
 
 class AttackSimulateResponse(BaseModel):
-    """Response containing ground-truth attack metadata and schema-valid ThreatAssessment as separate top-level keys."""
-
     attack_metadata: AttackMetadata = Field(
-        ..., description="Ground-truth attack metadata (never read by Layer 2 detectors)"
+        ..., description="Ground-truth attack metadata"
     )
     assessment: ThreatAssessment = Field(
         ..., description="Schema-valid ThreatAssessment output"
@@ -132,10 +118,6 @@ def _build_config(
     s_v: float | None,
     e_honest: float | None,
 ) -> Layer2Config:
-    """
-    Build a Layer2Config from request overrides, validating threshold ordering.
-    Raises HTTPException 422 if s_a >= s_v (violates Amiri et al. requirement).
-    """
     cfg = Layer2Config(verification_mode=verification_mode.value)
     if s_a is not None:
         cfg.s_a = s_a
@@ -144,7 +126,6 @@ def _build_config(
     if e_honest is not None:
         cfg.e_honest = e_honest
 
-    # Validate threshold ordering
     if cfg.s_a >= cfg.s_v:
         raise HTTPException(
             status_code=422,
@@ -166,7 +147,6 @@ def _build_config(
     return cfg
 
 
-# OpenAPI Request Examples
 ASSESS_EXAMPLES = {
     "clean_session": {
         "summary": "1. Clean Authentic Session",
@@ -205,6 +185,24 @@ ASSESS_EXAMPLES = {
                 "nonce": "nonce-demo-42",
                 "sequence_number": 1,
             },
+            "verification_mode": "direct",
+        },
+    },
+    "unauthorized_verifier": {
+        "summary": "3. Unauthorized Verifier Attempt",
+        "description": "Verifier Eve tries to verify packet addressed to Bob. Expected decision: REJECT.",
+        "value": {
+            "simulation": {
+                "message": "PAYLOAD_TRANSFER_PRIVATE_001",
+                "sender_id": "Alice",
+                "recipient_id": "Bob",
+                "signature_length": 16,
+                "seed": 42,
+                "session_id": "demo-auth-001",
+                "nonce": "nonce-auth-42",
+                "sequence_number": 1,
+            },
+            "requested_verifier_id": "Eve",
             "verification_mode": "direct",
         },
     },
@@ -262,12 +260,7 @@ ATTACK_SIMULATE_EXAMPLES = {
     "/assess",
     response_model=ThreatAssessment,
     summary="Simulate + Assess QDS Session",
-    description=(
-        "Runs a complete Layer 1 QDS protocol simulation and then applies the "
-        "Layer 2 Threat Detection Engine to produce a structured ThreatAssessment. "
-        "Specify verification_mode='direct' for Bob (s_a threshold) or "
-        "'forwarded' for Charlie (s_v threshold). These MUST NOT be cross-wired."
-    ),
+    description="Runs Layer 1 simulation and Layer 2 assessment with optional verifier identity checks.",
 )
 def assess_endpoint(
     request: AssessRequest = Body(..., openapi_examples=ASSESS_EXAMPLES)
@@ -296,7 +289,14 @@ def assess_endpoint(
 
     try:
         cfg = _build_config(request.verification_mode, request.s_a, request.s_v, request.e_honest)
-        return assess_session(session, config=cfg, ledger=default_ledger)
+        return assess_session(
+            session,
+            config=cfg,
+            ledger=default_ledger,
+            expected_sender_id=request.expected_sender_id,
+            expected_recipient_id=request.expected_recipient_id,
+            requested_verifier_id=request.requested_verifier_id,
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -307,16 +307,19 @@ def assess_endpoint(
     "/assess-existing",
     response_model=ThreatAssessment,
     summary="Assess Existing Layer 1 Session",
-    description=(
-        "Apply the Layer 2 Threat Detection Engine to an already-computed "
-        "ProtocolSessionResult without re-running Layer 1. Useful when the session "
-        "result is stored externally or produced by a prior simulation call."
-    ),
+    description="Assess an existing ProtocolSessionResult without re-running Layer 1.",
 )
 def assess_existing_endpoint(request: AssessExistingRequest) -> ThreatAssessment:
     try:
         cfg = _build_config(request.verification_mode, request.s_a, request.s_v, request.e_honest)
-        return assess_session(request.session, config=cfg, ledger=default_ledger)
+        return assess_session(
+            request.session,
+            config=cfg,
+            ledger=default_ledger,
+            expected_sender_id=request.expected_sender_id,
+            expected_recipient_id=request.expected_recipient_id,
+            requested_verifier_id=request.requested_verifier_id,
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -327,11 +330,7 @@ def assess_existing_endpoint(request: AssessExistingRequest) -> ThreatAssessment
     "/attack-simulate",
     response_model=AttackSimulateResponse,
     summary="Inject Attack & Run Layer 2 Assessment",
-    description=(
-        "Simulates a Layer 1 QDS session, injects a specified attack (e.g., PARTIAL_FORGERY, "
-        "CORRECTION_TAMPERING, REPLAY), and evaluates it through the Layer 2 Threat Detection Engine. "
-        "Returns ground-truth 'attack_metadata' and 'assessment' as separate top-level keys."
-    ),
+    description="Simulates session, injects specified attack, and evaluates threat telemetry.",
 )
 def attack_simulate_endpoint(
     request: AttackSimulateRequest = Body(..., openapi_examples=ATTACK_SIMULATE_EXAMPLES)
@@ -358,7 +357,6 @@ def attack_simulate_endpoint(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Layer 1 simulation error: {exc}")
 
-    # Inject attack into a copy of the session
     injected_session = inject_attack(
         session=session,
         attack_type=request.attack_type,
@@ -369,7 +367,14 @@ def attack_simulate_endpoint(
 
     try:
         cfg = _build_config(request.verification_mode, request.s_a, request.s_v, request.e_honest)
-        assessment = assess_session(injected_session, config=cfg, ledger=default_ledger)
+        assessment = assess_session(
+            injected_session,
+            config=cfg,
+            ledger=default_ledger,
+            expected_sender_id=request.expected_sender_id,
+            expected_recipient_id=request.expected_recipient_id,
+            requested_verifier_id=request.requested_verifier_id,
+        )
         return AttackSimulateResponse(
             attack_metadata=injected_session.attack_metadata,
             assessment=assessment,
@@ -384,10 +389,6 @@ def attack_simulate_endpoint(
     "/example-clean",
     response_model=ThreatAssessment,
     summary="Example: Clean Session Assessment",
-    description=(
-        "Returns a deterministic clean ThreatAssessment using Layer 1 seed=42. "
-        "Expected result: CLEAN, no findings, security_decision=ACCEPT."
-    ),
 )
 def example_clean_endpoint() -> ThreatAssessment:
     _example_ledger.clear()
@@ -411,10 +412,6 @@ def example_clean_endpoint() -> ThreatAssessment:
     "/example-replay",
     response_model=ThreatAssessment,
     summary="Example: Replay Attack Detection",
-    description=(
-        "Submits the same session fingerprint twice to the example ledger. "
-        "The second call returns CRITICAL / REPLAY_ATTACK."
-    ),
 )
 def example_replay_endpoint() -> ThreatAssessment:
     _example_ledger.clear()
@@ -438,11 +435,7 @@ def example_replay_endpoint() -> ThreatAssessment:
 @router.get(
     "/example-forgery",
     response_model=ThreatAssessment,
-    summary="Example: Digest Forgery Detection",
-    description=(
-        "Constructs a ProtocolSessionResult with a corrupted message_digest. "
-        "Expected result: CRITICAL / DIGEST_FORGERY, security_decision=REJECT."
-    ),
+    summary="Example: Payload Digest Mismatch Detection",
 )
 def example_forgery_endpoint() -> ThreatAssessment:
     _example_ledger.clear()

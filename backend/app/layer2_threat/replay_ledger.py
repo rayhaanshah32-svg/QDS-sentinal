@@ -1,21 +1,3 @@
-"""
-Layer 2 – Replay Ledger
-
-An in-memory singleton that records session fingerprints to detect replay
-attacks.  A fingerprint is the tuple:
-    (session_id, signature_block_id, nonce, sequence_number)
-
-All four fields must match for a replay to be flagged.  This is a
-deterministic check; a fingerprint match is authoritative evidence of replay.
-
-Scope and limitations
----------------------
-- In-memory only; state is lost on process restart.
-- Persistence (database, distributed cache) is out of scope for Layer 2.
-- The ledger is bounded by max_replay_window (Layer2Config) to prevent
-  unbounded memory growth; oldest entries are evicted first (FIFO).
-"""
-
 from __future__ import annotations
 
 from collections import OrderedDict
@@ -23,22 +5,14 @@ from threading import Lock
 
 
 class ReplayLedger:
-    """
-    Thread-safe, bounded in-memory replay fingerprint store.
-
-    Enforces:
-    (a) Exact duplicate nonce/signature-block or fingerprint match
-    (b) Duplicate sequence number within the same session
-    (c) Sequence number regression (lower than latest accepted sequence_number)
-    """
-
     def __init__(self, max_size: int = 1000) -> None:
         if max_size < 1:
             raise ValueError(f"max_size must be >= 1, got {max_size}")
         self._max_size = max_size
-        self._store: OrderedDict[str, None] = OrderedDict()
-        self._latest_seq: dict[str, int] = {}
-        self._session_nonces: dict[str, set[str]] = {}
+        self._store: OrderedDict[str, dict] = OrderedDict()
+        self._seen_block_ids: set[str] = set()
+        self._sender_recipient_nonces: dict[tuple[str, str], set[str]] = {}
+        self._latest_sequence_numbers: dict[tuple[str, str], int] = {}
         self._lock = Lock()
 
     @staticmethod
@@ -48,10 +22,6 @@ class ReplayLedger:
         nonce: str,
         sequence_number: int,
     ) -> str:
-        """
-        Build the canonical fingerprint string.
-        Format: "session_id|block_id|nonce|seq"
-        """
         return f"{session_id}|{block_id}|{nonce}|{sequence_number}"
 
     def check_and_record(
@@ -60,52 +30,62 @@ class ReplayLedger:
         block_id: str,
         nonce: str,
         sequence_number: int,
+        sender_id: str = "alice",
+        recipient_id: str = "bob",
     ) -> tuple[bool, str]:
-        """
-        Check whether this fingerprint already exists or violates sequence progression, then record it.
-
-        Returns
-        -------
-        (is_replay, fingerprint)
-            is_replay: True if already seen or sequence regression detected.
-            fingerprint: the canonical fingerprint string.
-        """
         fp = self.make_fingerprint(session_id, block_id, nonce, sequence_number)
+        pair_key = (sender_id, recipient_id)
+        session_key = (sender_id, session_id)
+
         with self._lock:
-            # (a) Exact duplicate fingerprint match
             if fp in self._store:
                 return True, fp
 
-            # (a) Nonce reuse within the same session
-            if session_id in self._session_nonces and nonce in self._session_nonces[session_id]:
+            if block_id in self._seen_block_ids:
                 return True, fp
 
-            # (b) & (c) Duplicate sequence number or lower sequence number regression
-            if session_id in self._latest_seq and sequence_number <= self._latest_seq[session_id]:
+            if pair_key in self._sender_recipient_nonces and nonce in self._sender_recipient_nonces[pair_key]:
                 return True, fp
 
-            # Record entry and maintain capacity limit
+            if session_key in self._latest_sequence_numbers and sequence_number <= self._latest_sequence_numbers[session_key]:
+                return True, fp
+
             while len(self._store) >= self._max_size:
-                evicted_fp, _ = self._store.popitem(last=False)
-                parts = evicted_fp.split("|")
-                if len(parts) >= 4:
-                    evicted_session = parts[0]
-                    evicted_nonce = parts[2]
-                    if evicted_session in self._session_nonces:
-                        self._session_nonces[evicted_session].discard(evicted_nonce)
-                    # If no remaining entries exist for this session, clear latest_seq and session_nonces
-                    has_remaining = any(k.startswith(f"{evicted_session}|") for k in self._store)
-                    if not has_remaining:
-                        self._latest_seq.pop(evicted_session, None)
-                        self._session_nonces.pop(evicted_session, None)
+                evicted_fp, evicted_metadata = self._store.popitem(last=False)
+                evicted_block = evicted_metadata.get("block_id")
+                evicted_pair = evicted_metadata.get("pair_key")
+                evicted_nonce = evicted_metadata.get("nonce")
+                evicted_session_key = evicted_metadata.get("session_key")
 
-            self._store[fp] = None
+                if evicted_block and evicted_block in self._seen_block_ids:
+                    self._seen_block_ids.discard(evicted_block)
 
-            if session_id not in self._session_nonces:
-                self._session_nonces[session_id] = set()
-            self._session_nonces[session_id].add(nonce)
+                if evicted_pair and evicted_pair in self._sender_recipient_nonces:
+                    self._sender_recipient_nonces[evicted_pair].discard(evicted_nonce)
 
-            self._latest_seq[session_id] = max(self._latest_seq.get(session_id, -1), sequence_number)
+                has_remaining_session = any(
+                    meta.get("session_key") == evicted_session_key
+                    for meta in self._store.values()
+                )
+                if not has_remaining_session and evicted_session_key in self._latest_sequence_numbers:
+                    self._latest_sequence_numbers.pop(evicted_session_key, None)
+
+            self._store[fp] = {
+                "block_id": block_id,
+                "pair_key": pair_key,
+                "nonce": nonce,
+                "session_key": session_key,
+            }
+            self._seen_block_ids.add(block_id)
+
+            if pair_key not in self._sender_recipient_nonces:
+                self._sender_recipient_nonces[pair_key] = set()
+            self._sender_recipient_nonces[pair_key].add(nonce)
+
+            current_highest = self._latest_sequence_numbers.get(session_key, -1)
+            if sequence_number > current_highest:
+                self._latest_sequence_numbers[session_key] = sequence_number
+
             return False, fp
 
     def __len__(self) -> int:
@@ -113,12 +93,11 @@ class ReplayLedger:
             return len(self._store)
 
     def clear(self) -> None:
-        """Clear all ledger entries (for testing)."""
         with self._lock:
             self._store.clear()
-            self._latest_seq.clear()
-            self._session_nonces.clear()
+            self._seen_block_ids.clear()
+            self._sender_recipient_nonces.clear()
+            self._latest_sequence_numbers.clear()
 
 
-# Module-level default ledger instance shared across the process.
 default_ledger = ReplayLedger()

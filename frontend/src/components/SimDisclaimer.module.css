@@ -1,0 +1,21 @@
+.disclaimer {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px;
+  background: var(--bg-base);
+  border: var(--border);
+  border-radius: var(--radius-md);
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.label {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  opacity: 0.7;
+}

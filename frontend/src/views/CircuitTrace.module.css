@@ -1,0 +1,120 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.empty {
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.statsRow {
+  display: flex;
+  gap: var(--space-3);
+  font-size: 11px;
+}
+
+.statOk { color: var(--color-accept); }
+.statFail { color: var(--color-critical); }
+.statWarn { color: var(--color-suspicious); }
+
+.sessionMeta {
+  display: flex;
+  gap: var(--space-4);
+  font-size: 10px;
+  flex-wrap: wrap;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+  border: var(--border);
+  border-radius: var(--radius-md);
+}
+
+.tableWrapper table {
+  min-width: 760px;
+}
+
+.indexCell {
+  color: var(--text-muted);
+  width: 36px;
+}
+
+.basisCell {
+  width: 50px;
+  font-weight: 500;
+}
+
+.basisX { color: hsl(213, 50%, 42%); }
+.basisY { color: hsl(280, 38%, 46%); }
+.basisZ { color: hsl(142, 30%, 40%); }
+
+.corrCell {
+  width: 70px;
+}
+
+.corrMismatch {
+  color: var(--color-critical);
+  font-weight: 500;
+}
+
+.mismatchMarker {
+  font-weight: 700;
+}
+
+.bitMismatch {
+  color: var(--color-critical);
+  font-weight: 500;
+}
+
+.rowCorrMismatch td {
+  background: hsl(6, 48%, 97%) !important;
+}
+
+.rowLowFid td {
+  background: hsl(38, 55%, 96%) !important;
+}
+
+.fidelityBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 120px;
+}
+
+.fidelityFill {
+  height: 4px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  max-width: 80px;
+}
+
+.fidelityLabel {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.matchYes {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-accept);
+  font-weight: 500;
+}
+
+.matchNo {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-critical);
+  font-weight: 500;
+}

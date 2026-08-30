@@ -48,6 +48,9 @@ def create_signature_packet(
         signature_length=signature_length,
         allowed_bases=allowed_bases,
         rng=rng,
+        session_id=session_id,
+        nonce=nonce,
+        sequence_number=sequence_number,
     )
 
     position_records = []

@@ -29,6 +29,9 @@ def generate_signature_material(
     signature_length: int = 16,
     allowed_bases: list[str] = None,
     rng: np.random.Generator = None,
+    session_id: str = "default_session",
+    nonce: str = "default_nonce",
+    sequence_number: int = 1,
 ) -> KeyMaterial:
     if signature_length <= 0:
         raise ValueError(f"Signature length must be positive, got {signature_length}")
@@ -49,8 +52,16 @@ def generate_signature_material(
 
     signature_elements = []
     for pos_index in range(signature_length):
-        selected_basis = str(rng.choice(cleaned_bases))
-        selected_bit = int(rng.integers(0, 2))
+        random_integer = int(rng.integers(0, 1000000))
+        binding_data = f"{message_digest}_{session_id}_{nonce}_{sequence_number}_{pos_index}_{random_integer}"
+        data_hash = hashlib.sha256(binding_data.encode("utf-8")).digest()
+
+        basis_index = int.from_bytes(data_hash[0:4], byteorder="big") % len(cleaned_bases)
+        selected_basis = cleaned_bases[basis_index]
+
+        bit_number = int.from_bytes(data_hash[4:8], byteorder="big") % 2
+        selected_bit = int(bit_number)
+
         element = SignatureElementMaterial(
             position_index=pos_index,
             basis=selected_basis,

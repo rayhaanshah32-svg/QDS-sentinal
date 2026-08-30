@@ -1,0 +1,51 @@
+:root {
+  --bg-base: hsl(40, 8%, 93%);
+  --bg-surface: hsl(40, 6%, 97%);
+  --bg-chrome: hsl(40, 5%, 86%);
+  --bg-hover: hsl(40, 6%, 91%);
+
+  --border: 1px solid var(--bg-chrome);
+
+  --text-primary: hsl(40, 5%, 14%);
+  --text-secondary: hsl(40, 5%, 35%);
+  --text-muted: hsl(40, 4%, 52%);
+  --text-inverse: hsl(40, 6%, 97%);
+
+  --color-accept: hsl(142, 26%, 38%);
+  --color-accept-bg: hsl(142, 22%, 93%);
+  --color-accept-bar: hsl(142, 30%, 42%);
+
+  --color-advisory: hsl(38, 62%, 44%);
+  --color-advisory-bg: hsl(38, 55%, 94%);
+  --color-advisory-bar: hsl(38, 65%, 48%);
+
+  --color-suspicious: hsl(28, 60%, 46%);
+  --color-suspicious-bg: hsl(28, 52%, 94%);
+  --color-suspicious-bar: hsl(28, 64%, 50%);
+
+  --color-critical: hsl(6, 52%, 42%);
+  --color-critical-bg: hsl(6, 48%, 95%);
+  --color-critical-bar: hsl(6, 58%, 46%);
+
+  --color-neutral: hsl(40, 5%, 55%);
+  --color-neutral-bg: hsl(40, 5%, 93%);
+
+  --color-link: hsl(213, 50%, 40%);
+
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --nav-height: 48px;
+}

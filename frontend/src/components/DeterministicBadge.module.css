@@ -1,0 +1,63 @@
+.badge {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  border-left-width: 3px;
+}
+
+.icon {
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.75;
+}
+
+.status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.hashes {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.75;
+  word-break: break-all;
+}
+
+.hashLabel {
+  opacity: 0.6;
+}
+
+.ok {
+  background: var(--color-accept-bg);
+  border-color: hsl(142, 22%, 80%);
+  border-left-color: var(--color-accept-bar);
+  color: var(--color-accept);
+}
+
+.fail {
+  background: var(--color-critical-bg);
+  border-color: hsl(6, 44%, 82%);
+  border-left-color: var(--color-critical-bar);
+  color: var(--color-critical);
+}

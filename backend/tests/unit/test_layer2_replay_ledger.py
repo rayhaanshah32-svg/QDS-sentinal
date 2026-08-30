@@ -1,6 +1,4 @@
-"""
-Unit tests – Layer 2 Replay Ledger
-"""
+from __future__ import annotations
 
 import pytest
 from app.layer2_threat.replay_ledger import ReplayLedger
@@ -39,18 +37,15 @@ def test_fingerprint_format():
 
 
 def test_ledger_evicts_oldest_when_full():
-    """After capacity is reached, oldest entry is evicted and can be re-inserted."""
     ledger = ReplayLedger(max_size=3)
     ledger.check_and_record(**_fp(1))
     ledger.check_and_record(**_fp(2))
     ledger.check_and_record(**_fp(3))
     assert len(ledger) == 3
 
-    # Adding fp(4) should evict fp(1)
     ledger.check_and_record(**_fp(4))
     assert len(ledger) == 3
 
-    # fp(1) was evicted; re-inserting is NOT flagged as replay
     is_replay, _ = ledger.check_and_record(**_fp(1))
     assert is_replay is False
 
@@ -70,17 +65,23 @@ def test_ledger_invalid_max_size():
 
 
 def test_sequence_number_difference_is_not_replay():
-    """Same session/block but fresh nonce and increasing sequence_number must NOT be replay."""
     ledger = ReplayLedger()
-    ledger.check_and_record(session_id="s", block_id="b", nonce="n1", sequence_number=1)
-    is_replay, _ = ledger.check_and_record(session_id="s", block_id="b", nonce="n2", sequence_number=2)
+    ledger.check_and_record(session_id="s", block_id="b1", nonce="n1", sequence_number=1)
+    is_replay, _ = ledger.check_and_record(session_id="s", block_id="b2", nonce="n2", sequence_number=2)
     assert is_replay is False
 
 
-def test_duplicate_nonce_same_session_is_replay():
+def test_repeated_signature_block_id_is_replay():
     ledger = ReplayLedger()
-    ledger.check_and_record(session_id="s1", block_id="b1", nonce="n1", sequence_number=1)
-    is_replay, _ = ledger.check_and_record(session_id="s1", block_id="b2", nonce="n1", sequence_number=2)
+    ledger.check_and_record(session_id="s1", block_id="b_same", nonce="n1", sequence_number=1)
+    is_replay, _ = ledger.check_and_record(session_id="s2", block_id="b_same", nonce="n2", sequence_number=1)
+    assert is_replay is True
+
+
+def test_duplicate_nonce_same_sender_recipient_different_sessions_is_replay():
+    ledger = ReplayLedger()
+    ledger.check_and_record(session_id="s1", block_id="b1", nonce="n_reused", sequence_number=1, sender_id="alice", recipient_id="bob")
+    is_replay, _ = ledger.check_and_record(session_id="s2", block_id="b2", nonce="n_reused", sequence_number=1, sender_id="alice", recipient_id="bob")
     assert is_replay is True
 
 
@@ -96,3 +97,4 @@ def test_sequence_number_lower_than_latest_is_replay():
     ledger.check_and_record(session_id="s1", block_id="b1", nonce="n1", sequence_number=5)
     is_replay, _ = ledger.check_and_record(session_id="s1", block_id="b2", nonce="n2", sequence_number=3)
     assert is_replay is True
+

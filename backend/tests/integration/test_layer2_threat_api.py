@@ -173,7 +173,7 @@ def test_example_forgery_endpoint_returns_critical():
     assert data["threat_level"] == "CRITICAL"
     assert data["digest_check"]["digest_matches"] is False
     assert "REJECT" in data["security_decision"]
-    assert any("DIGEST_FORGERY" in f for f in data["findings"])
+    assert any("PAYLOAD_DIGEST_MISMATCH" in f for f in data["findings"])
 
 
 def test_example_clean_has_disclaimer():

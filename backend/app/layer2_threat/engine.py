@@ -1,30 +1,3 @@
-"""
-Layer 2 – Threat Assessment Engine
-
-The engine coordinates all detectors, applies the priority ordering
-(deterministic first, statistical second), and emits a ThreatAssessment.
-
-Priority rules
---------------
-1. REPLAY (deterministic) → if detected, verdict = CRITICAL immediately.
-2. DIGEST_FORGERY (deterministic) → if detected, verdict = CRITICAL.
-3. CORRECTION_TAMPERING (deterministic) → if detected, verdict = CRITICAL.
-4. QBER_ANOMALY (statistical advisory) → if rate > q_alert, SUSPICIOUS.
-5. BELL_INTEGRITY (fidelity floor breach) → SUSPICIOUS.
-6. If only Bob/Charlie threshold breached but not above → ADVISORY.
-7. CLEAN if none of the above.
-
-Security decision rules
------------------------
-- verification_mode MUST be declared in the decision text.
-- In "direct" mode the threshold used is s_a (Bob).
-- In "forwarded" mode the threshold used is s_v (Charlie).
-- Cross-wiring is prohibited; a unit test enforces this constraint.
-- The decision string always reads:
-    "ACCEPT — verification_mode=direct, threshold=s_a=0.10, mismatch_rate=0.00"
-    "REJECT — verification_mode=forwarded, threshold=s_v=0.20, mismatch_rate=0.25; reason: QBER_ANOMALY"
-"""
-
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -45,6 +18,7 @@ from app.layer2_threat.schemas import (
     ThreatLevel,
     ThreatCategory,
     VerificationMode,
+    IdentityAuthorizationResult,
 )
 
 
@@ -52,25 +26,10 @@ def assess_session(
     session: ProtocolSessionResult,
     config: Layer2Config | None = None,
     ledger: ReplayLedger | None = None,
+    expected_sender_id: str | None = None,
+    expected_recipient_id: str | None = None,
+    requested_verifier_id: str | None = None,
 ) -> ThreatAssessment:
-    """
-    Run all Layer 2 detectors against a ProtocolSessionResult and produce
-    a ThreatAssessment.
-
-    Parameters
-    ----------
-    session : ProtocolSessionResult
-        The Layer 1 output to evaluate.  Never modified.
-    config : Layer2Config, optional
-        Threshold and mode configuration.  Defaults to default_config.
-    ledger : ReplayLedger, optional
-        Replay ledger instance.  Defaults to default_ledger.
-
-    Returns
-    -------
-    ThreatAssessment
-        Complete structured threat report.
-    """
     if config is None:
         config = default_config
     if ledger is None:
@@ -79,9 +38,31 @@ def assess_session(
     assessed_at = datetime.now(timezone.utc).isoformat()
     findings: list[str] = []
 
-    # ------------------------------------------------------------------
-    # Run all detectors
-    # ------------------------------------------------------------------
+    impersonation_detected = False
+    unauthorized_verifier_detected = False
+
+    if requested_verifier_id is not None and requested_verifier_id != session.recipient_id:
+        unauthorized_verifier_detected = True
+
+    if expected_sender_id is not None and expected_sender_id != session.sender_id:
+        impersonation_detected = True
+
+    if expected_recipient_id is not None and expected_recipient_id != session.recipient_id:
+        impersonation_detected = True
+
+    is_authorized = not (impersonation_detected or unauthorized_verifier_detected)
+
+    identity_authorization = IdentityAuthorizationResult(
+        is_authorized=is_authorized,
+        expected_sender_id=expected_sender_id,
+        expected_recipient_id=expected_recipient_id,
+        requested_verifier_id=requested_verifier_id,
+        actual_sender_id=session.sender_id,
+        actual_recipient_id=session.recipient_id,
+        impersonation_detected=impersonation_detected,
+        unauthorized_verifier_detected=unauthorized_verifier_detected,
+    )
+
     digest_result = run_digest_check(session)
     replay_result = run_replay_detection(session, ledger)
     correction_result = run_correction_consistency_check(session, config)
@@ -89,93 +70,80 @@ def assess_session(
     fidelity_result = run_fidelity_analysis(session, config)
     bob_charlie_result = run_bob_charlie_split(session, config)
 
-    # ------------------------------------------------------------------
-    # Determine threat level and category (priority-ordered)
-    # ------------------------------------------------------------------
     threat_level = ThreatLevel.CLEAN
     threat_category = ThreatCategory.NONE
-    triggered_categories: list[str] = []
+    triggered_categories: list[ThreatCategory] = []
 
-    # --- Priority 1: Replay (deterministic) ---
+    if unauthorized_verifier_detected:
+        threat_level = ThreatLevel.CRITICAL
+        triggered_categories.append(ThreatCategory.UNAUTHORIZED_VERIFICATION)
+        findings.append(
+            f"UNAUTHORIZED_VERIFICATION [CRITICAL] — verifier '{requested_verifier_id}' is not the intended packet recipient '{session.recipient_id}'."
+        )
+
+    if impersonation_detected:
+        threat_level = ThreatLevel.CRITICAL
+        triggered_categories.append(ThreatCategory.IMPERSONATION)
+        if expected_sender_id is not None and expected_sender_id != session.sender_id:
+            findings.append(
+                f"IMPERSONATION [CRITICAL] — expected sender '{expected_sender_id}' does not match packet sender '{session.sender_id}'."
+            )
+        if expected_recipient_id is not None and expected_recipient_id != session.recipient_id:
+            findings.append(
+                f"IMPERSONATION [CRITICAL] — expected recipient '{expected_recipient_id}' does not match packet recipient '{session.recipient_id}'."
+            )
+
     if replay_result.is_replay:
         threat_level = ThreatLevel.CRITICAL
         triggered_categories.append(ThreatCategory.REPLAY_ATTACK)
         findings.append(
-            f"REPLAY_ATTACK [CRITICAL] — fingerprint '{replay_result.fingerprint}' "
-            "already recorded in the replay ledger. Deterministic check."
+            f"REPLAY_ATTACK [CRITICAL] — fingerprint '{replay_result.fingerprint}' already recorded in the replay ledger."
         )
 
-    # --- Priority 2: Digest forgery (deterministic) ---
     if not digest_result.digest_matches:
         threat_level = ThreatLevel.CRITICAL
-        triggered_categories.append(ThreatCategory.DIGEST_FORGERY)
+        triggered_categories.append(ThreatCategory.PAYLOAD_DIGEST_MISMATCH)
         findings.append(
-            f"DIGEST_FORGERY [CRITICAL] — SHA-256 digest mismatch. "
-            f"Recorded digest: {digest_result.recorded_digest}. "
-            "Deterministic check; overrides all statistical findings."
+            f"PAYLOAD_DIGEST_MISMATCH [CRITICAL] — SHA-256 digest mismatch. Recorded: {digest_result.recorded_digest}, Recomputed: {digest_result.recomputed_digest}."
         )
 
-    # --- Priority 3: Correction tampering (deterministic) ---
     if correction_result.flag_raised:
         threat_level = ThreatLevel.CRITICAL
         triggered_categories.append(ThreatCategory.CORRECTION_TAMPERING)
         findings.append(
-            f"CORRECTION_TAMPERING [CRITICAL] — {correction_result.inconsistency_count} "
-            f"position(s) have expected_correction != actual_correction "
-            f"(rate={correction_result.inconsistency_rate:.4f} > threshold={correction_result.tamper_threshold}). "
-            f"Affected indices: {correction_result.inconsistent_positions}. Deterministic check."
+            f"CORRECTION_TAMPERING [CRITICAL] — {correction_result.inconsistency_count} position(s) have expected_correction != actual_correction."
         )
 
-    # --- Priority 4: QBER anomaly (statistical advisory) ---
     if qber_result.exceeds_threshold:
         if threat_level == ThreatLevel.CLEAN:
             threat_level = ThreatLevel.SUSPICIOUS
         triggered_categories.append(ThreatCategory.QBER_ANOMALY)
         findings.append(
-            f"QBER_ANOMALY [SUSPICIOUS] — observed mismatch rate "
-            f"{qber_result.observed_mismatch_rate:.4f} exceeds q_alert threshold "
-            f"{qber_result.alert_threshold:.4f}. "
-            f"Hoeffding false-positive bound: {qber_result.hoeffding_false_positive_bound:.4e} "
-            f"(n={qber_result.n_positions}, e_honest={config.e_honest}). "
-            "Statistical evidence only — not a standalone security guarantee."
+            f"QBER_ANOMALY [SUSPICIOUS] — observed mismatch rate {qber_result.global_mismatch_rate:.4f} exceeds q_alert threshold {qber_result.alert_threshold:.4f}."
         )
 
-    # --- Priority 5: Bell integrity / fidelity (statistical) ---
     if fidelity_result.flag_raised:
         if threat_level == ThreatLevel.CLEAN:
             threat_level = ThreatLevel.SUSPICIOUS
         triggered_categories.append(ThreatCategory.BELL_INTEGRITY_VIOLATION)
         findings.append(
-            f"BELL_INTEGRITY_VIOLATION [SUSPICIOUS] — "
-            f"{len(fidelity_result.low_fidelity_positions)} position(s) with fidelity "
-            f"< f_floor={fidelity_result.fidelity_floor} "
-            f"(min_fidelity={fidelity_result.min_fidelity:.6f}). "
-            f"Affected indices: {fidelity_result.low_fidelity_positions}. "
-            "Statistical indicator — may signal channel interference."
+            f"BELL_INTEGRITY_VIOLATION [SUSPICIOUS] — {len(fidelity_result.low_fidelity_positions)} position(s) with fidelity < f_floor={fidelity_result.fidelity_floor}."
         )
 
-    # --- Advisory: Bob/Charlie threshold breach ---
     if bob_charlie_result.direct_exceeds_threshold:
         if threat_level == ThreatLevel.CLEAN:
             threat_level = ThreatLevel.ADVISORY
         findings.append(
-            f"BOB_THRESHOLD_BREACH [ADVISORY] — Bob (direct) mismatch rate "
-            f"{bob_charlie_result.direct_mismatch_rate:.4f} > s_a={bob_charlie_result.direct_threshold_s_a}. "
-            f"({bob_charlie_result.direct_mismatch_count}/{bob_charlie_result.direct_positions_count} positions). "
-            "verification_mode=direct evaluated against s_a."
+            f"BOB_THRESHOLD_BREACH [ADVISORY] — Bob (direct) mismatch rate {bob_charlie_result.direct_mismatch_rate:.4f} > s_a={bob_charlie_result.direct_threshold_s_a}."
         )
 
     if bob_charlie_result.forwarded_exceeds_threshold:
         if threat_level == ThreatLevel.CLEAN:
             threat_level = ThreatLevel.ADVISORY
         findings.append(
-            f"CHARLIE_THRESHOLD_BREACH [ADVISORY] — Charlie (forwarded) mismatch rate "
-            f"{bob_charlie_result.forwarded_mismatch_rate:.4f} > s_v={bob_charlie_result.forwarded_threshold_s_v}. "
-            f"({bob_charlie_result.forwarded_mismatch_count}/{bob_charlie_result.forwarded_positions_count} positions). "
-            "verification_mode=forwarded evaluated against s_v."
+            f"CHARLIE_THRESHOLD_BREACH [ADVISORY] — Charlie (forwarded) mismatch rate {bob_charlie_result.forwarded_mismatch_rate:.4f} > s_v={bob_charlie_result.forwarded_threshold_s_v}."
         )
 
-    # --- Consolidate threat category ---
     if len(triggered_categories) > 1:
         threat_category = ThreatCategory.COMBINED
     elif len(triggered_categories) == 1:
@@ -183,32 +151,25 @@ def assess_session(
     else:
         threat_category = ThreatCategory.NONE
 
-    # ------------------------------------------------------------------
-    # Security decision (must declare verification_mode and threshold)
-    # CONSTRAINT: Never cross-wire s_a into forwarded mode or s_v into direct.
-    # ------------------------------------------------------------------
     from app.layer2_threat.bounds import validate_threshold_chain
 
     mode = VerificationMode(config.verification_mode)
 
     if mode == VerificationMode.DIRECT:
-        # Evaluate against Bob's half with s_a
         rate_for_decision = bob_charlie_result.direct_mismatch_rate
-        e_upper_for_decision = bob_charlie_result.direct_e_upper
+        confidence_upper_bound_for_decision = bob_charlie_result.direct_confidence_upper_bound
         threshold_for_decision = config.s_a
         threshold_label = "s_a"
         breach_for_decision = bob_charlie_result.direct_exceeds_threshold
     elif mode == VerificationMode.FORWARDED:
-        # Evaluate against Charlie's half with s_v
         rate_for_decision = bob_charlie_result.forwarded_mismatch_rate
-        e_upper_for_decision = bob_charlie_result.forwarded_e_upper
+        confidence_upper_bound_for_decision = bob_charlie_result.forwarded_confidence_upper_bound
         threshold_for_decision = config.s_v
         threshold_label = "s_v"
         breach_for_decision = bob_charlie_result.forwarded_exceeds_threshold
     else:
         raise ValueError(f"Unknown verification_mode: {config.verification_mode!r}")
 
-    # Programmatically validate the threshold chain e_upper < s_a < s_v < p_E
     chain_valid, chain_msg = validate_threshold_chain(
         e_upper=config.e_honest,
         s_a=config.s_a,
@@ -220,9 +181,9 @@ def assess_session(
         threat_level = ThreatLevel.CRITICAL
         findings.append(f"CONFIGURATION_WARNING [CRITICAL] — {chain_msg}")
 
-    # Deterministic failure or threshold chain breach overrides any statistical accept
     hard_reject = (
-        not digest_result.digest_matches
+        not is_authorized
+        or not digest_result.digest_matches
         or replay_result.is_replay
         or correction_result.flag_raised
         or not chain_valid
@@ -236,7 +197,7 @@ def assess_session(
             f"REJECT — verification_mode={mode.value}, "
             f"threshold={threshold_label}={threshold_for_decision}, "
             f"mismatch_rate={rate_for_decision:.4f}, "
-            f"e_upper={e_upper_for_decision:.4f}; "
+            f"confidence_upper_bound={confidence_upper_bound_for_decision:.4f}; "
             f"reason(s): {', '.join(reject_reasons)}"
         )
     else:
@@ -244,7 +205,7 @@ def assess_session(
             f"ACCEPT — verification_mode={mode.value}, "
             f"threshold={threshold_label}={threshold_for_decision}, "
             f"mismatch_rate={rate_for_decision:.4f}, "
-            f"e_upper={e_upper_for_decision:.4f}"
+            f"confidence_upper_bound={confidence_upper_bound_for_decision:.4f}"
         )
 
     return ThreatAssessment(
@@ -264,6 +225,7 @@ def assess_session(
         correction_consistency=correction_result,
         fidelity_analysis=fidelity_result,
         replay_detection=replay_result,
+        identity_authorization=identity_authorization,
         bob_charlie_metrics=bob_charlie_result,
         threat_level=threat_level,
         threat_category=threat_category,

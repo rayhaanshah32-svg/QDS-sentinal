@@ -1,10 +1,3 @@
-"""
-Layer 2 Threat Detection Engine – Output Schemas (ThreatAssessment)
-
-All field names are verified against the actual Layer 1 schemas before use.
-This module defines ONLY Layer 2 output types; it never alters Layer 1 models.
-"""
-
 from __future__ import annotations
 
 from enum import Enum
@@ -12,12 +5,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-# ---------------------------------------------------------------------------
-# Enumerations
-# ---------------------------------------------------------------------------
-
 class ThreatLevel(str, Enum):
-    """Ordered severity levels for threat findings."""
     CLEAN = "CLEAN"
     ADVISORY = "ADVISORY"
     SUSPICIOUS = "SUSPICIOUS"
@@ -25,33 +13,23 @@ class ThreatLevel(str, Enum):
 
 
 class ThreatCategory(str, Enum):
-    """Classification of the threat type detected."""
     NONE = "NONE"
     QBER_ANOMALY = "QBER_ANOMALY"
     CORRECTION_TAMPERING = "CORRECTION_TAMPERING"
     REPLAY_ATTACK = "REPLAY_ATTACK"
-    DIGEST_FORGERY = "DIGEST_FORGERY"
+    PAYLOAD_DIGEST_MISMATCH = "PAYLOAD_DIGEST_MISMATCH"
+    IMPERSONATION = "IMPERSONATION"
+    UNAUTHORIZED_VERIFICATION = "UNAUTHORIZED_VERIFICATION"
     BELL_INTEGRITY_VIOLATION = "BELL_INTEGRITY_VIOLATION"
     COMBINED = "COMBINED"
 
 
 class VerificationMode(str, Enum):
-    """Which verification role was evaluated (Bob = direct, Charlie = forwarded)."""
     DIRECT = "direct"
     FORWARDED = "forwarded"
 
 
-# ---------------------------------------------------------------------------
-# Per-detector sub-models
-# ---------------------------------------------------------------------------
-
 class DigestCheckResult(BaseModel):
-    """Result of the deterministic SHA-256 digest verification.
-
-    Deterministic verification always wins over statistical evidence.
-    Fields sourced from ProtocolSessionResult.message_digest and
-    BasicVerificationSummary.digest_matches.
-    """
     digest_matches: bool = Field(
         ...,
         description="Whether the SHA-256 digest in the packet matches the plaintext message",
@@ -60,51 +38,63 @@ class DigestCheckResult(BaseModel):
         ...,
         description="SHA-256 digest as recorded in the Layer 1 packet",
     )
+    recomputed_digest: str = Field(
+        ...,
+        description="SHA-256 digest recomputed from the plaintext message by Layer 2",
+    )
     is_authoritative: bool = Field(
         default=True,
-        description="Digest check is deterministic and authoritative; it overrides statistical findings",
+        description="Digest check is deterministic and authoritative",
     )
+
+
+class BasisQBERMetrics(BaseModel):
+    basis: str = Field(..., description="Pauli basis name (X, Y, or Z)")
+    sample_count: int = Field(..., description="Number of positions in this basis")
+    mismatch_count: int = Field(..., description="Number of bit mismatches in this basis")
+    rate: float = Field(..., description="Mismatch rate for this basis")
+    insufficient_samples: bool = Field(..., description="True if sample count is below required minimum")
 
 
 class QBERAnalysisResult(BaseModel):
-    """Quantum Bit Error Rate analysis.
-
-    Provides confidence-bounded evidence of channel interference; does NOT
-    constitute a standalone security guarantee.
-    Source: mismatch_rate from BasicVerificationSummary.
-    """
+    global_mismatch_rate: float = Field(
+        ...,
+        description="Global mismatch rate across all positions",
+    )
     observed_mismatch_rate: float = Field(
         ...,
-        description="Raw mismatch fraction from Layer 1 verification_summary.mismatch_rate",
+        description="Global mismatch rate across all positions",
     )
     alert_threshold: float = Field(
         ...,
-        description="q_alert threshold used (source: Layer2Config.q_alert)",
+        description="Configurable advisory alert threshold q_alert",
     )
     exceeds_threshold: bool = Field(
         ...,
-        description="True if observed_mismatch_rate > alert_threshold",
+        description="True if global_mismatch_rate > alert_threshold",
     )
     hoeffding_false_positive_bound: float = Field(
         ...,
-        description=(
-            "Upper bound on false-positive probability: exp(-2 * n * (observed_rate - e_honest)^2). "
-            "Only meaningful when observed_rate > e_honest. Set to 1.0 when rate <= e_honest."
-        ),
+        description="Hoeffding bound on false positive probability",
+    )
+    total_positions: int = Field(
+        ...,
+        description="Total signature positions evaluated",
     )
     n_positions: int = Field(
         ...,
-        description="Total signature positions evaluated (source: BasicVerificationSummary.total_positions)",
+        description="Total signature positions evaluated",
+    )
+    qber_x: BasisQBERMetrics = Field(..., description="QBER metrics for X basis")
+    qber_y: BasisQBERMetrics = Field(..., description="QBER metrics for Y basis")
+    qber_z: BasisQBERMetrics = Field(..., description="QBER metrics for Z basis")
+    basis_wise: dict[str, BasisQBERMetrics] = Field(
+        default_factory=dict,
+        description="Basis-wise QBER breakdown dictionary",
     )
 
 
 class CorrectionConsistencyResult(BaseModel):
-    """Pauli correction consistency check.
-
-    Deterministic: any expected_correction != actual_correction at a position
-    indicates post-teleportation tampering in the simulated channel.
-    Source: SignaturePositionRecord.expected_correction and .actual_correction.
-    """
     inconsistent_positions: list[int] = Field(
         default_factory=list,
         description="Indices of positions where expected_correction != actual_correction",
@@ -119,7 +109,7 @@ class CorrectionConsistencyResult(BaseModel):
     )
     tamper_threshold: float = Field(
         ...,
-        description="c_tamper_rate threshold used (source: Layer2Config.c_tamper_rate)",
+        description="c_tamper_rate threshold used",
     )
     flag_raised: bool = Field(
         ...,
@@ -128,10 +118,6 @@ class CorrectionConsistencyResult(BaseModel):
 
 
 class FidelityAnalysisResult(BaseModel):
-    """Per-position teleportation fidelity analysis.
-
-    Source: SignaturePositionRecord.fidelity and TeleportationEvent.fidelity.
-    """
     average_fidelity: float = Field(
         ...,
         description="Mean fidelity across all signature positions",
@@ -142,7 +128,7 @@ class FidelityAnalysisResult(BaseModel):
     )
     fidelity_floor: float = Field(
         ...,
-        description="f_floor threshold used (source: Layer2Config.f_floor)",
+        description="f_floor threshold used",
     )
     low_fidelity_positions: list[int] = Field(
         default_factory=list,
@@ -155,14 +141,9 @@ class FidelityAnalysisResult(BaseModel):
 
 
 class ReplayDetectionResult(BaseModel):
-    """Replay attack detection via session-fingerprint ledger.
-
-    Fingerprint = (session_id, signature_block_id, nonce, sequence_number).
-    Deterministic check; a match is authoritative evidence of replay.
-    """
     fingerprint: str = Field(
         ...,
-        description="Tuple string used as ledger key: session_id|block_id|nonce|seq",
+        description="Fingerprint string used as ledger key",
     )
     is_replay: bool = Field(
         ...,
@@ -174,102 +155,105 @@ class ReplayDetectionResult(BaseModel):
     )
 
 
+class IdentityAuthorizationResult(BaseModel):
+    is_authorized: bool = Field(
+        default=True,
+        description="True if all identity and verifier authorization checks passed",
+    )
+    expected_sender_id: Optional[str] = Field(
+        default=None,
+        description="Expected sender ID from verifier context",
+    )
+    expected_recipient_id: Optional[str] = Field(
+        default=None,
+        description="Expected recipient ID from verifier context",
+    )
+    requested_verifier_id: Optional[str] = Field(
+        default=None,
+        description="Requested verifier ID from verifier context",
+    )
+    actual_sender_id: str = Field(
+        ...,
+        description="Actual sender ID in packet",
+    )
+    actual_recipient_id: str = Field(
+        ...,
+        description="Actual recipient ID in packet",
+    )
+    impersonation_detected: bool = Field(
+        default=False,
+        description="True if sender or recipient mismatch was detected",
+    )
+    unauthorized_verifier_detected: bool = Field(
+        default=False,
+        description="True if verifier is not the intended packet recipient",
+    )
+
+
 class BobCharlieMetrics(BaseModel):
-    """Bob vs. Charlie (direct vs. forwarded) mismatch rates.
-
-    IMPORTANT: Direct and forwarded metrics must NEVER be collapsed into a
-    single number (Amiri et al. 2016, Eq. 20-24 repudiation analysis).
-
-    Layer 2 explicitly implements the symmetrization/forwarding split because
-    Layer 1 produces a single sender→recipient packet.  See
-    docs/layer2-security-claims.md for the documented simplification.
-    """
-    # Bob (direct authenticator)
     direct_positions_count: int = Field(
         ...,
-        description="Number of signature positions assigned to Bob (direct verification half)",
+        description="Number of signature positions assigned to Bob",
     )
     direct_mismatch_count: int = Field(
         ...,
-        description="Number of mismatches in Bob's half",
+        description="Number of mismatches in Bob's direct half",
     )
     direct_mismatch_rate: float = Field(
         ...,
-        description="Mismatch rate in Bob's direct half",
+        description="Raw mismatch rate in Bob's direct half",
+    )
+    direct_confidence_upper_bound: float = Field(
+        ...,
+        description="Confidence upper bound on Bob's error rate (uncertainty estimate)",
     )
     direct_e_upper: float = Field(
         ...,
-        description="Confidence-adjusted (upper bound) mismatch rate in Bob's direct half using finite-sample bound",
+        description="Confidence upper bound on Bob's error rate",
     )
     direct_threshold_s_a: float = Field(
         ...,
-        description="s_a threshold applied to Bob's half (source: Layer2Config.s_a)",
+        description="s_a threshold applied to Bob's half",
     )
     direct_exceeds_threshold: bool = Field(
         ...,
-        description="True if direct_e_upper >= s_a (or direct_mismatch_rate > s_a)",
+        description="True if direct_mismatch_rate > s_a",
     )
-
-    # Charlie (forwarded verifier)
     forwarded_positions_count: int = Field(
         ...,
-        description="Number of signature positions assigned to Charlie (forwarded half)",
+        description="Number of signature positions assigned to Charlie",
     )
     forwarded_mismatch_count: int = Field(
         ...,
-        description="Number of mismatches in Charlie's half",
+        description="Number of mismatches in Charlie's forwarded half",
     )
     forwarded_mismatch_rate: float = Field(
         ...,
-        description="Mismatch rate in Charlie's forwarded half",
+        description="Raw mismatch rate in Charlie's forwarded half",
+    )
+    forwarded_confidence_upper_bound: float = Field(
+        ...,
+        description="Confidence upper bound on Charlie's error rate (uncertainty estimate)",
     )
     forwarded_e_upper: float = Field(
         ...,
-        description="Confidence-adjusted (upper bound) mismatch rate in Charlie's forwarded half using finite-sample bound",
+        description="Confidence upper bound on Charlie's error rate",
     )
     forwarded_threshold_s_v: float = Field(
         ...,
-        description="s_v threshold applied to Charlie's half (source: Layer2Config.s_v)",
+        description="s_v threshold applied to Charlie's half",
     )
     forwarded_exceeds_threshold: bool = Field(
         ...,
-        description="True if forwarded_e_upper >= s_v (or forwarded_mismatch_rate > s_v)",
+        description="True if forwarded_mismatch_rate > s_v",
     )
-
     splitting_method: str = Field(
         default="first_half_bob_second_half_charlie",
-        description=(
-            "How positions were split. Layer 2 explicit simplification: "
-            "positions[:n//2] → Bob, positions[n//2:] → Charlie. "
-            "See docs/layer2-security-claims.md."
-        ),
+        description="How positions were split between Bob and Charlie",
     )
 
 
-# ---------------------------------------------------------------------------
-# Top-level ThreatAssessment
-# ---------------------------------------------------------------------------
-
 class ThreatAssessment(BaseModel):
-    """
-    Layer 2 Threat Detection Engine output.
-
-    Consumes a ProtocolSessionResult and produces a structured threat
-    classification with per-detector evidence and a final security decision.
-
-    Scientific integrity notice
-    ---------------------------
-    - This is a software simulation.  It does NOT prove physical composable
-      security or claim to detect every quantum attack.
-    - Deterministic checks (digest, replay, correction consistency) are
-      authoritative.
-    - Statistical checks (QBER, fidelity) are confidence-bounded indicators.
-    - Every emitted number is traceable to a field in ProtocolSessionResult,
-      a threshold in Layer2Config, or a formula documented in this module.
-    - All results are reproducible from a fixed seed via Layer 1's seed field.
-    """
-
-    # Session provenance
     session_id: str = Field(
         ...,
         description="Forwarded from ProtocolSessionResult.session_id",
@@ -294,38 +278,31 @@ class ThreatAssessment(BaseModel):
         ...,
         description="ISO 8601 UTC timestamp of this assessment",
     )
-
-    # Configuration snapshot (for audit reproducibility)
     verification_mode: VerificationMode = Field(
         ...,
-        description=(
-            "Which verification role was evaluated. MUST be declared so the "
-            "security decision is never cross-wired (Amiri et al. Eq. 20-24)."
-        ),
+        description="Verification role evaluated (direct or forwarded)",
     )
     s_a_used: float = Field(
         ...,
-        description="s_a threshold value used in this assessment (source: Layer2Config)",
+        description="s_a threshold value used in this assessment",
     )
     s_v_used: float = Field(
         ...,
-        description="s_v threshold value used in this assessment (source: Layer2Config)",
+        description="s_v threshold value used in this assessment",
     )
     p_E_used: float = Field(
         ...,
-        description="p_E threshold value used in this assessment (source: Layer2Config)",
+        description="p_E threshold value used in this assessment",
     )
     e_honest_used: float = Field(
         ...,
         description="Configured honest background error rate used for calibration",
     )
-
-    # Per-detector results
     digest_check: DigestCheckResult = Field(
         ..., description="Deterministic SHA-256 digest verification"
     )
     qber_analysis: QBERAnalysisResult = Field(
-        ..., description="QBER statistical analysis"
+        ..., description="QBER statistical analysis and basis-wise breakdown"
     )
     correction_consistency: CorrectionConsistencyResult = Field(
         ..., description="Pauli correction consistency check"
@@ -336,11 +313,12 @@ class ThreatAssessment(BaseModel):
     replay_detection: ReplayDetectionResult = Field(
         ..., description="Replay attack detection via session ledger"
     )
-    bob_charlie_metrics: BobCharlieMetrics = Field(
-        ..., description="Direct vs. forwarded mismatch metrics (must never be collapsed)"
+    identity_authorization: IdentityAuthorizationResult = Field(
+        ..., description="Identity and verifier authorization check results"
     )
-
-    # Final security decision
+    bob_charlie_metrics: BobCharlieMetrics = Field(
+        ..., description="Direct vs forwarded mismatch metrics"
+    )
     threat_level: ThreatLevel = Field(
         ...,
         description="Overall threat severity level for this session",
@@ -351,20 +329,19 @@ class ThreatAssessment(BaseModel):
     )
     findings: list[str] = Field(
         default_factory=list,
-        description="Human-readable list of all anomalies detected, referencing the detector that raised them",
+        description="List of all anomalies detected",
     )
     security_decision: str = Field(
         ...,
-        description=(
-            "ACCEPT or REJECT with mandatory reference to which verification_mode "
-            "and threshold (s_a or s_v) was evaluated. Cannot cross-wire modes."
-        ),
+        description="ACCEPT or REJECT with mode, threshold, mismatch rate, and confidence upper bound",
     )
     simulation_disclaimer: str = Field(
         default=(
             "This is a software simulation of QDS protocol mechanics. "
             "Results do not constitute information-theoretic security proofs "
-            "under coherent attacks, nor claims of physical composable security."
+            "under coherent attacks, nor claims of physical composable security. "
+            "Confidence upper bounds are statistical uncertainty estimates that "
+            "become more informative as signature length increases."
         ),
         description="Mandatory scientific integrity disclaimer",
     )

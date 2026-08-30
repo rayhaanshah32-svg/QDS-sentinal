@@ -1,0 +1,45 @@
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  border-left-width: 3px;
+}
+
+.icon {
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.detail {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.error {
+  background: var(--color-critical-bg);
+  border-color: hsl(6, 44%, 82%);
+  border-left-color: var(--color-critical-bar);
+  color: var(--color-critical);
+}
+
+.validation {
+  background: var(--color-advisory-bg);
+  border-color: hsl(38, 48%, 82%);
+  border-left-color: var(--color-advisory-bar);
+  color: var(--color-advisory);
+}
