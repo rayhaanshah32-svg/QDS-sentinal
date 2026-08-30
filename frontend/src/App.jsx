@@ -7,6 +7,8 @@ import MetricsPanel from './views/MetricsPanel'
 import ExperimentReport from './views/ExperimentReport'
 import DecisionBanner from './components/DecisionBanner'
 import SimDisclaimer from './components/SimDisclaimer'
+import OperationsMode from './components/operations/OperationsMode'
+import TelemetryLogs from './views/TelemetryLogs'
 import { checkHealth, getExampleClean } from './api/client'
 import { WifiOff, Activity } from 'lucide-react'
 import styles from './App.module.css'
@@ -18,7 +20,9 @@ const TABS = [
   { id: 'feed',       label: 'Threat Feed' },
   { id: 'metrics',    label: 'Security Metrics' },
   { id: 'experiment', label: 'Experiment Report' },
+  { id: 'logs',       label: 'Database Logs' },
 ]
+
 
 
 const ATTACK_SCENARIO_LABELS = {
@@ -66,6 +70,14 @@ export default function App() {
   const [attackMeta, setAttackMeta] = useState(null)
   const [backendOnline, setBackendOnline] = useState(null)
   const [targetPosition, setTargetPosition] = useState(null)
+  const [mode, setMode] = useState(() => {
+    return localStorage.getItem('qds_mode') || 'simulation'
+  })
+
+  function switchMode(newMode) {
+    setMode(newMode)
+    localStorage.setItem('qds_mode', newMode)
+  }
 
   function applyResult(result) {
     setAssessment(result.assessment ?? null)
@@ -117,6 +129,23 @@ export default function App() {
           <span className={styles.brandName}>QDS Sentinel</span>
         </div>
 
+        <div className={styles.modeToggle}>
+          <button
+            id="mode-btn-simulation"
+            className={`${styles.modeBtn} ${mode === 'simulation' ? styles.modeBtnActive : ''}`}
+            onClick={() => switchMode('simulation')}
+          >
+            Simulation
+          </button>
+          <button
+            id="mode-btn-operations"
+            className={`${styles.modeBtn} ${mode === 'operations' ? styles.modeBtnActive : ''}`}
+            onClick={() => switchMode('operations')}
+          >
+            Operations
+          </button>
+        </div>
+
         <div className={styles.systemStatus}>
           {backendOnline === false && (
             <div className={styles.offlineChip}>
@@ -149,52 +178,63 @@ export default function App() {
         </div>
       )}
 
-      <nav className={styles.nav}>
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            id={`tab-${tab.id}`}
-            className={`${styles.navTab} ${activeTab === tab.id ? styles.navTabActive : ''}`}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-            {tab.id === 'feed' && hasResult && assessment.findings?.length > 0 && (
-              <span className={styles.findingCount}>{assessment.findings.length}</span>
+      {mode === 'operations' ? (
+        <main className={styles.main}>
+          <OperationsMode />
+        </main>
+      ) : (
+        <>
+          <nav className={styles.nav}>
+            {TABS.map(tab => (
+              <button
+                key={tab.id}
+                id={`tab-${tab.id}`}
+                className={`${styles.navTab} ${activeTab === tab.id ? styles.navTabActive : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+                {tab.id === 'feed' && hasResult && assessment.findings?.length > 0 && (
+                  <span className={styles.findingCount}>{assessment.findings.length}</span>
+                )}
+              </button>
+            ))}
+          </nav>
+
+          <main className={styles.main}>
+            {activeTab === 'control' && (
+              <ControlPanel onResult={handleResult} />
             )}
-          </button>
-        ))}
-      </nav>
+            {activeTab === 'circuit' && (
+              <CircuitTrace sessionResult={sessionResult} assessment={assessment} />
+            )}
+            {activeTab === 'quantum' && (
+              <QuantumState
+                sessionResult={sessionResult}
+                assessment={assessment}
+                initialPosition={targetPosition}
+              />
+            )}
 
-      <main className={styles.main}>
-        {activeTab === 'control' && (
-          <ControlPanel onResult={handleResult} />
-        )}
-        {activeTab === 'circuit' && (
-          <CircuitTrace sessionResult={sessionResult} assessment={assessment} />
-        )}
-        {activeTab === 'quantum' && (
-          <QuantumState
-            sessionResult={sessionResult}
-            assessment={assessment}
-            initialPosition={targetPosition}
-          />
-        )}
+            {activeTab === 'feed' && (
+              <ThreatFeed assessment={assessment} sessionResult={sessionResult} attackMeta={attackMeta} />
+            )}
+            {activeTab === 'metrics' && (
+              <MetricsPanel assessment={assessment} />
+            )}
+            {activeTab === 'experiment' && (
+              <ExperimentReport />
+            )}
+            {activeTab === 'logs' && (
+              <TelemetryLogs sessionResult={sessionResult} assessment={assessment} />
+            )}
+          </main>
 
-        {activeTab === 'feed' && (
-          <ThreatFeed assessment={assessment} sessionResult={sessionResult} attackMeta={attackMeta} />
-        )}
-        {activeTab === 'metrics' && (
-          <MetricsPanel assessment={assessment} />
-        )}
-        {activeTab === 'experiment' && (
-          <ExperimentReport />
-        )}
-      </main>
-
-      {hasResult && (
-        <footer className={styles.footer}>
-          <SimDisclaimer text={assessment.simulation_disclaimer} />
-        </footer>
+          {hasResult && (
+            <footer className={styles.footer}>
+              <SimDisclaimer text={assessment.simulation_disclaimer} />
+            </footer>
+          )}
+        </>
       )}
     </div>
   )

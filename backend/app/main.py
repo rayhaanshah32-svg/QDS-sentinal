@@ -3,7 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.endpoints import router as layer1_router
 from app.layer2_threat.api import router as layer2_router
+from app.api.ops_endpoints import router as ops_router
 from app.schemas.api import HealthResponse
+from app.database.session import init_db
 
 app = FastAPI(
     title=settings.app_name,
@@ -19,8 +21,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.on_event("startup")
+def startup_event():
+    init_db()
+
+
 app.include_router(layer1_router)
 app.include_router(layer2_router)
+app.include_router(ops_router)
 
 
 @app.get(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel, Field
@@ -12,8 +13,116 @@ from app.layer2_threat.replay_ledger import default_ledger, ReplayLedger
 from app.layer2_threat.engine import assess_session
 from app.layer2_threat.schemas import ThreatAssessment, VerificationMode
 from app.layer2_threat.attacks import inject_attack
+from app.database.session import SessionLocal
+from app.database import crud
 
 router = APIRouter(prefix="/api/v1/layer2", tags=["Layer 2 Threat Detection"])
+
+
+FINDING_TO_SEVERITY = {
+    "CRITICAL": "critical",
+    "SUSPICIOUS": "suspicious",
+    "ADVISORY": "suspicious",
+}
+
+FINDING_TO_IMPACT = {
+    "CORRECTION_TAMPERING": "The quantum correction instructions were altered. The message integrity cannot be guaranteed.",
+    "BELL_INTEGRITY_VIOLATION": "Low entanglement fidelity detected. The quantum channel may have been interfered with.",
+    "QBER_ANOMALY": "Error rate exceeded advisory threshold. Possible eavesdropping on the quantum channel.",
+    "REPLAY_ATTACK": "This packet fingerprint was already seen. The message is a replay of a captured session.",
+    "PAYLOAD_DIGEST_MISMATCH": "The message hash does not match. The payload was modified after signing.",
+    "IMPERSONATION": "Sender or recipient identity does not match expected values.",
+    "UNAUTHORIZED_VERIFICATION": "An unauthorized party attempted to verify this message.",
+    "BOB_THRESHOLD_BREACH": "Direct verification mismatch rate exceeded the accept threshold.",
+    "CHARLIE_THRESHOLD_BREACH": "Forwarded verification mismatch rate exceeded the accept threshold.",
+    "CONFIGURATION_WARNING": "Security configuration ordering violation detected.",
+}
+
+
+def _persist_assessment(
+    session_result: ProtocolSessionResult,
+    assessment: ThreatAssessment,
+    attack_type_label: str | None = None,
+) -> None:
+    try:
+        db = SessionLocal()
+        verdict_word = "ACCEPT" if assessment.security_decision.startswith("ACCEPT") else "REJECT"
+
+        is_direct = assessment.verification_mode == VerificationMode.DIRECT
+        mismatch_rate = (
+            assessment.bob_charlie_metrics.direct_mismatch_rate
+            if is_direct
+            else assessment.bob_charlie_metrics.forwarded_mismatch_rate
+        )
+        threshold = (
+            assessment.s_a_used if is_direct else assessment.s_v_used
+        )
+        confidence_upper_bound = (
+            assessment.bob_charlie_metrics.direct_confidence_upper_bound
+            if is_direct
+            else assessment.bob_charlie_metrics.forwarded_confidence_upper_bound
+        )
+
+        session_data = {
+            "id": session_result.session_id,
+            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None),
+            "sender_id": session_result.sender_id,
+            "recipient_id": session_result.recipient_id,
+            "message": session_result.message,
+            "verification_mode": assessment.verification_mode.value,
+            "threat_level": assessment.threat_level.value.lower(),
+            "verdict": verdict_word,
+            "mismatch_rate": mismatch_rate,
+            "threshold": threshold,
+            "confidence_upper_bound": confidence_upper_bound,
+            "mean_fidelity": assessment.fidelity_analysis.average_fidelity,
+            "attack_type": attack_type_label,
+            "raw_assessment_string": assessment.security_decision,
+        }
+
+        existing = crud.get_session(db, session_result.session_id)
+        if existing is None:
+            crud.create_session(db, session_data)
+        else:
+            for key, value in session_data.items():
+                setattr(existing, key, value)
+            db.commit()
+
+        telemetry_logs = []
+        for pos in session_result.signature_positions:
+            bell_bits = pos.bell_measurement_bits
+            bell_outcome_str = str(bell_bits) if bell_bits is not None else ""
+            telemetry_logs.append({
+                "position_index": pos.index,
+                "basis": pos.pauli_basis,
+                "bell_outcome": bell_outcome_str,
+                "expected_correction": str(pos.expected_correction),
+                "actual_correction": str(pos.actual_correction),
+                "fidelity": pos.fidelity,
+                "match": pos.is_match,
+            })
+        crud.create_telemetry_logs(db, session_result.session_id, telemetry_logs)
+
+        for finding in assessment.findings:
+            parts = finding.split(" [")
+            raw_type = parts[0].strip() if parts else finding
+            severity_tag = "suspicious"
+            if "CRITICAL" in finding:
+                severity_tag = "critical"
+            elif "SUSPICIOUS" in finding:
+                severity_tag = "suspicious"
+
+            crud.create_threat_event(db, session_result.session_id, {
+                "threat_type": raw_type,
+                "severity": severity_tag,
+                "observed_evidence": finding,
+                "protocol_impact": FINDING_TO_IMPACT.get(raw_type, finding),
+                "timestamp": datetime.now(timezone.utc).replace(tzinfo=None),
+            })
+
+        db.close()
+    except Exception:
+        pass
 
 _example_ledger = ReplayLedger(max_size=100)
 
@@ -309,6 +418,7 @@ def assess_endpoint(
             expected_recipient_id=request.expected_recipient_id,
             requested_verifier_id=request.requested_verifier_id,
         )
+        _persist_assessment(session, assessment, attack_type_label=None)
         return AssessResponse(
             session=session,
             assessment=assessment,
@@ -336,6 +446,7 @@ def assess_existing_endpoint(request: AssessExistingRequest) -> AssessResponse:
             expected_recipient_id=request.expected_recipient_id,
             requested_verifier_id=request.requested_verifier_id,
         )
+        _persist_assessment(request.session, assessment, attack_type_label=None)
         return AssessResponse(
             session=request.session,
             assessment=assessment,
@@ -430,6 +541,8 @@ def attack_simulate_endpoint(
             )
 
         final_meta = replay_meta if replay_meta else injected_session.attack_metadata
+        attack_label = request.attack_type.value if hasattr(request.attack_type, "value") else str(request.attack_type)
+        _persist_assessment(injected_session, assessment, attack_type_label=attack_label)
         return AttackSimulateResponse(
             attack_metadata=final_meta,
             injected_session=injected_session,
@@ -463,6 +576,7 @@ def example_clean_endpoint() -> AssessResponse:
     )
     cfg = Layer2Config(verification_mode="direct")
     assessment = assess_session(session, config=cfg, ledger=_example_ledger)
+    _persist_assessment(session, assessment, attack_type_label=None)
     return AssessResponse(session=session, assessment=assessment)
 
 
@@ -488,6 +602,7 @@ def example_replay_endpoint() -> AssessResponse:
     cfg = Layer2Config(verification_mode="direct")
     assess_session(session, config=cfg, ledger=_example_ledger)
     assessment = assess_session(session, config=cfg, ledger=_example_ledger)
+    _persist_assessment(session, assessment, attack_type_label="REPLAY")
     return AssessResponse(session=session, assessment=assessment)
 
 
@@ -523,4 +638,6 @@ def example_forgery_endpoint() -> AssessResponse:
 
     cfg = Layer2Config(verification_mode="direct")
     assessment = assess_session(tampered_session, config=cfg, ledger=_example_ledger)
+    _persist_assessment(tampered_session, assessment, attack_type_label="PAYLOAD_DIGEST_MISMATCH")
     return AssessResponse(session=tampered_session, assessment=assessment)
+
