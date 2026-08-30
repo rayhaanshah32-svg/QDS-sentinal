@@ -94,57 +94,52 @@ export default function ControlPanel({ onResult }) {
       requested_verifier_id: form.requested_verifier_id || null,
     }
 
-    const [sessionResult, assessmentResult] = await Promise.all([
-      runLayer1Simulate(simulation),
-      form.attack_type
-        ? runAttackSimulate({
-            simulation,
-            ...advancedOverrides,
-            attack_type: form.attack_type,
-            intensity: parseFloat(form.intensity),
-            target_basis: form.target_basis || null,
-          })
-        : runAssess({ simulation, ...advancedOverrides }),
-    ])
+    const response = form.attack_type
+      ? await runAttackSimulate({
+          simulation,
+          ...advancedOverrides,
+          attack_type: form.attack_type,
+          intensity: parseFloat(form.intensity),
+          target_basis: form.target_basis || null,
+        })
+      : await runAssess({ simulation, ...advancedOverrides })
 
     setLoading(false)
 
-    if (assessmentResult.error) {
-      setError(assessmentResult.error)
+    if (response.error) {
+      setError(response.error)
       return
     }
 
     if (form.attack_type) {
-      const data = assessmentResult.data
+      const data = response.data
       onResult({
         assessment: data.assessment,
-        sessionResult: data.injected_session || null,
+        sessionResult: data.injected_session,
         attackMeta: data.attack_metadata,
       })
     } else {
+      const data = response.data
       onResult({
-        assessment: assessmentResult.data,
-        sessionResult: sessionResult.error ? null : sessionResult.data,
+        assessment: data.assessment,
+        sessionResult: data.session,
         attackMeta: null,
       })
     }
   }
 
-  async function handleExample(fetchFn, label, simParams) {
+  async function handleExample(fetchFn) {
     setLoading(true)
     setError(null)
-    const [result, sessionRes] = await Promise.all([
-      fetchFn(),
-      runLayer1Simulate(simParams),
-    ])
+    const result = await fetchFn()
     setLoading(false)
     if (result.error) {
       setError(result.error)
       return
     }
     onResult({
-      assessment: result.data,
-      sessionResult: sessionRes.error ? null : sessionRes.data,
+      assessment: result.data.assessment,
+      sessionResult: result.data.session,
       attackMeta: null,
     })
   }
@@ -158,46 +153,19 @@ export default function ControlPanel({ onResult }) {
         <div className={styles.quickExamples}>
           <span className={styles.quickLabel}>Quick examples:</span>
           <button
-            onClick={() => handleExample(getExampleClean, 'clean', {
-              message: 'AUTHENTICATED_TRANSACTION_PAYLOAD_CLEAN',
-              sender_id: 'alice',
-              recipient_id: 'bob',
-              signature_length: 16,
-              seed: 42,
-              bell_state: 'PHI_PLUS',
-              bases_allowed: ['X', 'Y', 'Z'],
-              sequence_number: 1,
-            })}
+            onClick={() => handleExample(getExampleClean)}
             disabled={loading}
           >
             Clean session
           </button>
           <button
-            onClick={() => handleExample(getExampleReplay, 'replay', {
-              message: 'AUTHENTICATED_TRANSACTION_REPLAY_TEST',
-              sender_id: 'alice',
-              recipient_id: 'bob',
-              signature_length: 16,
-              seed: 99,
-              bell_state: 'PHI_PLUS',
-              bases_allowed: ['X', 'Y', 'Z'],
-              sequence_number: 1,
-            })}
+            onClick={() => handleExample(getExampleReplay)}
             disabled={loading}
           >
             Replay attack
           </button>
           <button
-            onClick={() => handleExample(getExampleForgery, 'forgery', {
-              message: 'AUTHENTIC_MESSAGE',
-              sender_id: 'alice',
-              recipient_id: 'bob',
-              signature_length: 16,
-              seed: 77,
-              bell_state: 'PHI_PLUS',
-              bases_allowed: ['X', 'Y', 'Z'],
-              sequence_number: 1,
-            })}
+            onClick={() => handleExample(getExampleForgery)}
             disabled={loading}
           >
             Digest forgery

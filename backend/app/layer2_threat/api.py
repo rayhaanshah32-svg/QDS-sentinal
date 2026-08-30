@@ -58,6 +58,15 @@ class AssessRequest(BaseModel):
     )
 
 
+class AssessResponse(BaseModel):
+    session: ProtocolSessionResult = Field(
+        ..., description="Generated Layer 1 session assessed by Layer 2"
+    )
+    assessment: ThreatAssessment = Field(
+        ..., description="Schema-valid ThreatAssessment output"
+    )
+
+
 class AssessExistingRequest(BaseModel):
     session: ProtocolSessionResult = Field(
         ..., description="Layer 1 ProtocolSessionResult to assess"
@@ -261,13 +270,13 @@ ATTACK_SIMULATE_EXAMPLES = {
 
 @router.post(
     "/assess",
-    response_model=ThreatAssessment,
+    response_model=AssessResponse,
     summary="Simulate + Assess QDS Session",
     description="Runs Layer 1 simulation and Layer 2 assessment with optional verifier identity checks.",
 )
 def assess_endpoint(
     request: AssessRequest = Body(..., openapi_examples=ASSESS_EXAMPLES)
-) -> ThreatAssessment:
+) -> AssessResponse:
     try:
         sim = request.simulation
         allowed_bases_str = [b.value if hasattr(b, "value") else str(b) for b in sim.bases_allowed]
@@ -292,13 +301,17 @@ def assess_endpoint(
 
     try:
         cfg = _build_config(request.verification_mode, request.s_a, request.s_v, request.e_honest)
-        return assess_session(
+        assessment = assess_session(
             session,
             config=cfg,
             ledger=default_ledger,
             expected_sender_id=request.expected_sender_id,
             expected_recipient_id=request.expected_recipient_id,
             requested_verifier_id=request.requested_verifier_id,
+        )
+        return AssessResponse(
+            session=session,
+            assessment=assessment,
         )
     except HTTPException:
         raise
@@ -308,20 +321,24 @@ def assess_endpoint(
 
 @router.post(
     "/assess-existing",
-    response_model=ThreatAssessment,
+    response_model=AssessResponse,
     summary="Assess Existing Layer 1 Session",
     description="Assess an existing ProtocolSessionResult without re-running Layer 1.",
 )
-def assess_existing_endpoint(request: AssessExistingRequest) -> ThreatAssessment:
+def assess_existing_endpoint(request: AssessExistingRequest) -> AssessResponse:
     try:
         cfg = _build_config(request.verification_mode, request.s_a, request.s_v, request.e_honest)
-        return assess_session(
+        assessment = assess_session(
             request.session,
             config=cfg,
             ledger=default_ledger,
             expected_sender_id=request.expected_sender_id,
             expected_recipient_id=request.expected_recipient_id,
             requested_verifier_id=request.requested_verifier_id,
+        )
+        return AssessResponse(
+            session=request.session,
+            assessment=assessment,
         )
     except HTTPException:
         raise
@@ -427,10 +444,10 @@ def attack_simulate_endpoint(
 
 @router.get(
     "/example-clean",
-    response_model=ThreatAssessment,
+    response_model=AssessResponse,
     summary="Example: Clean Session Assessment",
 )
-def example_clean_endpoint() -> ThreatAssessment:
+def example_clean_endpoint() -> AssessResponse:
     _example_ledger.clear()
     session = run_protocol_session(
         message="AUTHENTICATED_TRANSACTION_PAYLOAD_CLEAN",
@@ -445,15 +462,16 @@ def example_clean_endpoint() -> ThreatAssessment:
         sequence_number=1,
     )
     cfg = Layer2Config(verification_mode="direct")
-    return assess_session(session, config=cfg, ledger=_example_ledger)
+    assessment = assess_session(session, config=cfg, ledger=_example_ledger)
+    return AssessResponse(session=session, assessment=assessment)
 
 
 @router.get(
     "/example-replay",
-    response_model=ThreatAssessment,
+    response_model=AssessResponse,
     summary="Example: Replay Attack Detection",
 )
-def example_replay_endpoint() -> ThreatAssessment:
+def example_replay_endpoint() -> AssessResponse:
     _example_ledger.clear()
     session = run_protocol_session(
         message="AUTHENTICATED_TRANSACTION_REPLAY_TEST",
@@ -469,15 +487,16 @@ def example_replay_endpoint() -> ThreatAssessment:
     )
     cfg = Layer2Config(verification_mode="direct")
     assess_session(session, config=cfg, ledger=_example_ledger)
-    return assess_session(session, config=cfg, ledger=_example_ledger)
+    assessment = assess_session(session, config=cfg, ledger=_example_ledger)
+    return AssessResponse(session=session, assessment=assessment)
 
 
 @router.get(
     "/example-forgery",
-    response_model=ThreatAssessment,
+    response_model=AssessResponse,
     summary="Example: Payload Digest Mismatch Detection",
 )
-def example_forgery_endpoint() -> ThreatAssessment:
+def example_forgery_endpoint() -> AssessResponse:
     _example_ledger.clear()
     session = run_protocol_session(
         message="AUTHENTIC_MESSAGE",
@@ -503,4 +522,5 @@ def example_forgery_endpoint() -> ThreatAssessment:
     )
 
     cfg = Layer2Config(verification_mode="direct")
-    return assess_session(tampered_session, config=cfg, ledger=_example_ledger)
+    assessment = assess_session(tampered_session, config=cfg, ledger=_example_ledger)
+    return AssessResponse(session=tampered_session, assessment=assessment)

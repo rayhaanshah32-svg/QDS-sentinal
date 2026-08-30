@@ -6,7 +6,7 @@ import MetricsPanel from './views/MetricsPanel'
 import ExperimentReport from './views/ExperimentReport'
 import DecisionBanner from './components/DecisionBanner'
 import SimDisclaimer from './components/SimDisclaimer'
-import { checkHealth, getExampleClean, runLayer1Simulate } from './api/client'
+import { checkHealth, getExampleClean } from './api/client'
 import { WifiOff, Activity } from 'lucide-react'
 import styles from './App.module.css'
 
@@ -77,22 +77,10 @@ export default function App() {
         setBackendOnline(res.online)
       }
       if (res.online) {
-        const [cleanAssess, cleanSession] = await Promise.all([
-          getExampleClean(),
-          runLayer1Simulate({
-            message: 'AUTHENTICATED_TRANSACTION_PAYLOAD_CLEAN',
-            sender_id: 'alice',
-            recipient_id: 'bob',
-            signature_length: 16,
-            seed: 42,
-            bell_state: 'PHI_PLUS',
-            bases_allowed: ['X', 'Y', 'Z'],
-            sequence_number: 1,
-          }),
-        ])
-        if (mounted && cleanAssess.data && cleanSession.data) {
-          setAssessment(cleanAssess.data)
-          setSessionResult(cleanSession.data)
+        const cleanResult = await getExampleClean()
+        if (mounted && cleanResult.data) {
+          setAssessment(cleanResult.data.assessment)
+          setSessionResult(cleanResult.data.session)
           setAttackMeta(null)
         }
       }

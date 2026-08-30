@@ -210,6 +210,20 @@ def inject_attack(
     else:
         raise ValueError(f"Unknown AttackType: {attack_type!r}")
 
+    pos_map = {p.index: p for p in positions}
+    for i, m in enumerate(measurement_events):
+        if m.position_index in pos_map:
+            p = pos_map[m.position_index]
+            measurement_events[i] = m.model_copy(update={"outcome_bit": p.final_measured_bit})
+
+    for i, t in enumerate(teleportation_events):
+        if t.position_index in pos_map:
+            p = pos_map[t.position_index]
+            teleportation_events[i] = t.model_copy(update={
+                "applied_correction": p.actual_correction,
+                "fidelity": p.fidelity,
+            })
+
     new_summary = _recompute_verification_summary(positions, digest_matches=digest_matches)
 
     attack_meta = AttackMetadata(
@@ -230,3 +244,4 @@ def inject_attack(
             "attack_metadata": attack_meta,
         }
     )
+

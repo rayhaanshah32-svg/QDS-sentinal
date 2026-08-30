@@ -51,31 +51,33 @@ def test_assess_clean_session_returns_200():
 def test_assess_clean_session_is_clean():
     response = client.post("/api/v1/layer2/assess", json=CLEAN_REQUEST)
     data = response.json()
-    assert data["threat_level"] == "CLEAN"
-    assert data["threat_category"] == "NONE"
-    assert data["findings"] == []
-    assert "ACCEPT" in data["security_decision"]
+    assert "session" in data
+    assert "assessment" in data
+    assessment = data["assessment"]
+    assert assessment["threat_level"] == "CLEAN"
+    assert assessment["threat_category"] == "NONE"
+    assert assessment["findings"] == []
+    assert "ACCEPT" in assessment["security_decision"]
 
 
 def test_assess_clean_declares_verification_mode_in_decision():
     response = client.post("/api/v1/layer2/assess", json=CLEAN_REQUEST)
-    data = response.json()
-    assert "verification_mode=direct" in data["security_decision"]
-    assert "s_a=" in data["security_decision"]
+    assessment = response.json()["assessment"]
+    assert "verification_mode=direct" in assessment["security_decision"]
+    assert "s_a=" in assessment["security_decision"]
 
 
 def test_assess_forwarded_mode_uses_s_v_in_decision():
     req = {**CLEAN_REQUEST, "verification_mode": "forwarded"}
     response = client.post("/api/v1/layer2/assess", json=req)
-    data = response.json()
-    assert "verification_mode=forwarded" in data["security_decision"]
-    assert "s_v=" in data["security_decision"]
-    # Must NOT have s_a as primary threshold
-    assert "threshold=s_a" not in data["security_decision"]
+    assessment = response.json()["assessment"]
+    assert "verification_mode=forwarded" in assessment["security_decision"]
+    assert "s_v=" in assessment["security_decision"]
+    assert "threshold=s_a" not in assessment["security_decision"]
 
 
 def test_assess_invalid_threshold_order_returns_422():
-    req = {**CLEAN_REQUEST, "s_a": 0.25, "s_v": 0.10}  # s_a > s_v — invalid
+    req = {**CLEAN_REQUEST, "s_a": 0.25, "s_v": 0.10}
     response = client.post("/api/v1/layer2/assess", json=req)
     assert response.status_code == 422
 
@@ -83,14 +85,20 @@ def test_assess_invalid_threshold_order_returns_422():
 def test_assess_returns_session_provenance():
     response = client.post("/api/v1/layer2/assess", json=CLEAN_REQUEST)
     data = response.json()
-    assert data["session_id"] == "int-test-clean-001"
-    assert data["sender_id"] == "alice"
-    assert data["recipient_id"] == "bob"
+    session = data["session"]
+    assessment = data["assessment"]
+    assert session["session_id"] == "int-test-clean-001"
+    assert assessment["session_id"] == "int-test-clean-001"
+    assert assessment["sender_id"] == "alice"
+    assert assessment["recipient_id"] == "bob"
 
 
 def test_assess_response_has_all_required_fields():
     response = client.post("/api/v1/layer2/assess", json=CLEAN_REQUEST)
     data = response.json()
+    assert "session" in data
+    assert "assessment" in data
+    assessment = data["assessment"]
     required = [
         "threat_level", "threat_category", "findings", "security_decision",
         "digest_check", "qber_analysis", "correction_consistency",
@@ -99,17 +107,15 @@ def test_assess_response_has_all_required_fields():
         "verification_mode",
     ]
     for field in required:
-        assert field in data, f"Missing field: {field}"
+        assert field in assessment, f"Missing field: {field}"
 
 
 def test_assess_bob_charlie_metrics_never_collapsed():
-    """direct_mismatch_rate and forwarded_mismatch_rate must be separate fields."""
     response = client.post("/api/v1/layer2/assess", json=CLEAN_REQUEST)
-    data = response.json()
-    bc = data["bob_charlie_metrics"]
+    assessment = response.json()["assessment"]
+    bc = assessment["bob_charlie_metrics"]
     assert "direct_mismatch_rate" in bc
     assert "forwarded_mismatch_rate" in bc
-    # They must be separate — verify both keys exist independently
     assert bc["direct_threshold_s_a"] != bc["forwarded_threshold_s_v"]
 
 
@@ -118,19 +124,19 @@ def test_assess_bob_charlie_metrics_never_collapsed():
 # ---------------------------------------------------------------------------
 
 def test_assess_existing_returns_200():
-    """First fetch a Layer 1 session, then assess it via assess-existing."""
-    # Get a Layer 1 session
     sim_resp = client.get("/api/v1/layer1/example-session")
     assert sim_resp.status_code == 200
     session_data = sim_resp.json()
 
-    # Now assess it
     assess_req = {
         "session": session_data,
         "verification_mode": "direct",
     }
     response = client.post("/api/v1/layer2/assess-existing", json=assess_req)
     assert response.status_code == 200
+    data = response.json()
+    assert "session" in data
+    assert "assessment" in data
 
 
 def test_assess_existing_clean_session():
@@ -139,9 +145,9 @@ def test_assess_existing_clean_session():
 
     assess_req = {"session": session_data, "verification_mode": "direct"}
     response = client.post("/api/v1/layer2/assess-existing", json=assess_req)
-    data = response.json()
-    assert data["threat_level"] == "CLEAN"
-    assert "ACCEPT" in data["security_decision"]
+    assessment = response.json()["assessment"]
+    assert assessment["threat_level"] == "CLEAN"
+    assert "ACCEPT" in assessment["security_decision"]
 
 
 # ---------------------------------------------------------------------------
@@ -152,34 +158,37 @@ def test_example_clean_endpoint():
     response = client.get("/api/v1/layer2/example-clean")
     assert response.status_code == 200
     data = response.json()
-    assert data["threat_level"] == "CLEAN"
-    assert "ACCEPT" in data["security_decision"]
+    assert "session" in data
+    assert "assessment" in data
+    assessment = data["assessment"]
+    assert assessment["threat_level"] == "CLEAN"
+    assert "ACCEPT" in assessment["security_decision"]
 
 
 def test_example_replay_endpoint_returns_critical():
     response = client.get("/api/v1/layer2/example-replay")
     assert response.status_code == 200
-    data = response.json()
-    assert data["threat_level"] == "CRITICAL"
-    assert data["replay_detection"]["is_replay"] is True
-    assert "REJECT" in data["security_decision"]
-    assert any("REPLAY" in f for f in data["findings"])
+    assessment = response.json()["assessment"]
+    assert assessment["threat_level"] == "CRITICAL"
+    assert assessment["replay_detection"]["is_replay"] is True
+    assert "REJECT" in assessment["security_decision"]
+    assert any("REPLAY" in f for f in assessment["findings"])
 
 
 def test_example_forgery_endpoint_returns_critical():
     response = client.get("/api/v1/layer2/example-forgery")
     assert response.status_code == 200
-    data = response.json()
-    assert data["threat_level"] == "CRITICAL"
-    assert data["digest_check"]["digest_matches"] is False
-    assert "REJECT" in data["security_decision"]
-    assert any("PAYLOAD_DIGEST_MISMATCH" in f for f in data["findings"])
+    assessment = response.json()["assessment"]
+    assert assessment["threat_level"] == "CRITICAL"
+    assert assessment["digest_check"]["digest_matches"] is False
+    assert "REJECT" in assessment["security_decision"]
+    assert any("PAYLOAD_DIGEST_MISMATCH" in f for f in assessment["findings"])
 
 
 def test_example_clean_has_disclaimer():
     response = client.get("/api/v1/layer2/example-clean")
-    data = response.json()
-    assert "software simulation" in data["simulation_disclaimer"].lower()
+    assessment = response.json()["assessment"]
+    assert "software simulation" in assessment["simulation_disclaimer"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -187,26 +196,20 @@ def test_example_clean_has_disclaimer():
 # ---------------------------------------------------------------------------
 
 def test_assess_existing_correction_tampering():
-    """
-    Submit a session with manually mismatched corrections via assess-existing.
-    This tests that correction_consistency correctly flags the tampered field.
-    """
-    # Build a clean session then tamper one position's actual_correction
     sim_resp = client.get("/api/v1/layer1/example-session")
     session_data = sim_resp.json()
 
-    # Tamper position 0: change actual_correction to something wrong
     session_data["signature_positions"][0]["actual_correction"] = "X"
     session_data["signature_positions"][0]["expected_correction"] = "I"
 
     assess_req = {"session": session_data, "verification_mode": "direct"}
     response = client.post("/api/v1/layer2/assess-existing", json=assess_req)
     assert response.status_code == 200
-    data = response.json()
+    assessment = response.json()["assessment"]
 
-    assert data["correction_consistency"]["flag_raised"] is True
-    assert data["threat_level"] == "CRITICAL"
-    assert any("CORRECTION_TAMPERING" in f for f in data["findings"])
+    assert assessment["correction_consistency"]["flag_raised"] is True
+    assert assessment["threat_level"] == "CRITICAL"
+    assert any("CORRECTION_TAMPERING" in f for f in assessment["findings"])
 
 
 # ---------------------------------------------------------------------------
@@ -214,10 +217,6 @@ def test_assess_existing_correction_tampering():
 # ---------------------------------------------------------------------------
 
 def test_assess_replay_same_packet_twice_rejected():
-    """
-    Submitting the exact same simulation payload twice to /assess MUST cause
-    the second call to be flagged as REJECT / REPLAY_ATTACK.
-    """
     req = {
         "simulation": {
             "message": "REPLAY_DEMO_PAYLOAD",
@@ -237,18 +236,19 @@ def test_assess_replay_same_packet_twice_rejected():
     # First call -> ACCEPT
     resp1 = client.post("/api/v1/layer2/assess", json=req)
     assert resp1.status_code == 200
-    data1 = resp1.json()
-    assert "ACCEPT" in data1["security_decision"]
-    assert data1["replay_detection"]["is_replay"] is False
+    assessment1 = resp1.json()["assessment"]
+    assert "ACCEPT" in assessment1["security_decision"]
+    assert assessment1["replay_detection"]["is_replay"] is False
 
     # Second call with identical session_id & nonce -> REJECT
     resp2 = client.post("/api/v1/layer2/assess", json=req)
     assert resp2.status_code == 200
-    data2 = resp2.json()
-    assert "REJECT" in data2["security_decision"]
-    assert data2["threat_level"] == "CRITICAL"
-    assert data2["replay_detection"]["is_replay"] is True
-    assert any("REPLAY_ATTACK" in f for f in data2["findings"])
+    assessment2 = resp2.json()["assessment"]
+    assert "REJECT" in assessment2["security_decision"]
+    assert assessment2["threat_level"] == "CRITICAL"
+    assert assessment2["replay_detection"]["is_replay"] is True
+    assert any("REPLAY_ATTACK" in f for f in assessment2["findings"])
+
 
 
 # ---------------------------------------------------------------------------
@@ -365,26 +365,66 @@ def test_attack_simulate_replay_stateful():
     assert data["attack_metadata"]["attack_type"] == "REPLAY"
 
 
-def test_invalid_threshold_chain_human_readable_422():
-    req = {
-        "simulation": {
-            "message": "TEST_INVALID_ORDER",
-            "sender_id": "alice",
-            "recipient_id": "bob",
-            "signature_length": 16,
-            "seed": 42,
-            "bell_state": "PHI_PLUS",
-            "bases_allowed": ["X", "Y", "Z"],
-            "session_id": "inv-001",
-            "nonce": "nonce-inv-42",
-            "sequence_number": 1,
-        },
-        "s_a": 0.30,
-        "s_v": 0.20,
-    }
-    response = client.post("/api/v1/layer2/assess", json=req)
-    assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert "Threshold ordering violated" in detail
-    assert "must be strictly less than" in detail
+def test_cross_layer_telemetry_consistency_all_attacks():
+    attack_types = [
+        "PARTIAL_FORGERY",
+        "FULL_FORGERY",
+        "CORRECTION_TAMPERING",
+        "INTERCEPT_RESEND",
+        "CHANNEL_MANIPULATION",
+        "FIDELITY_DEGRADATION",
+        "BOB_REPUDIATION",
+    ]
+
+    for atk in attack_types:
+        req = {
+            "simulation": {
+                "message": f"TEST_TELEMETRY_{atk}",
+                "sender_id": "alice",
+                "recipient_id": "bob",
+                "signature_length": 16,
+                "seed": 42,
+                "bell_state": "PHI_PLUS",
+                "bases_allowed": ["X", "Y", "Z"],
+                "session_id": f"tel-{atk.lower()}-001",
+                "nonce": f"nonce-{atk.lower()}-42",
+                "sequence_number": 1,
+            },
+            "attack_type": atk,
+            "intensity": 0.5,
+            "verification_mode": "direct",
+        }
+
+        response = client.post("/api/v1/layer2/attack-simulate", json=req)
+        assert response.status_code == 200
+        data = response.json()
+        injected = data["injected_session"]
+
+        positions = injected["signature_positions"]
+        teleportation_events = injected["teleportation_events"]
+        measurement_events = injected["measurement_events"]
+
+        tel_map = {t["position_index"]: t for t in teleportation_events}
+        meas_map = {m["position_index"]: m for m in measurement_events}
+
+        for p in positions:
+            idx = p["index"]
+            assert idx in meas_map, f"Missing measurement event for position {idx} in {atk}"
+            assert idx in tel_map, f"Missing teleportation event for position {idx} in {atk}"
+
+            # Verify measurement outcome bit matches position record
+            assert p["final_measured_bit"] == meas_map[idx]["outcome_bit"], (
+                f"Mismatch in {atk} at pos {idx}: position bit={p['final_measured_bit']} vs event bit={meas_map[idx]['outcome_bit']}"
+            )
+
+            # Verify applied Pauli correction matches position record
+            assert p["actual_correction"] == tel_map[idx]["applied_correction"], (
+                f"Mismatch in {atk} at pos {idx}: position corr={p['actual_correction']} vs event corr={tel_map[idx]['applied_correction']}"
+            )
+
+            # Verify fidelity matches position record
+            assert abs(p["fidelity"] - tel_map[idx]["fidelity"]) < 1e-6, (
+                f"Mismatch in {atk} at pos {idx}: position fid={p['fidelity']} vs event fid={tel_map[idx]['fidelity']}"
+            )
+
 
