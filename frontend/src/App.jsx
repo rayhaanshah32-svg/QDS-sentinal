@@ -5,7 +5,6 @@ import ThreatFeed from './views/ThreatFeed'
 import MetricsPanel from './views/MetricsPanel'
 import ExperimentReport from './views/ExperimentReport'
 import DecisionBanner from './components/DecisionBanner'
-import ThreatBadge from './components/ThreatBadge'
 import SimDisclaimer from './components/SimDisclaimer'
 import { checkHealth, getExampleClean, runLayer1Simulate } from './api/client'
 import { WifiOff, Activity } from 'lucide-react'
@@ -19,12 +18,56 @@ const TABS = [
   { id: 'experiment', label: 'Experiment Report' },
 ]
 
+const ATTACK_SCENARIO_LABELS = {
+  REPLAY: 'Replay captured packet',
+  PARTIAL_FORGERY: 'Partial signature forgery',
+  CORRECTION_TAMPERING: 'Pauli correction tampering',
+  FULL_FORGERY: 'Full signature forgery',
+  INTERCEPT_RESEND: 'Intercept and resend',
+  CHANNEL_MANIPULATION: 'Channel manipulation',
+  FIDELITY_DEGRADATION: 'Fidelity degradation',
+  BOB_REPUDIATION: 'Bob repudiation',
+}
+
+function ScenarioStrip({ assessment, attackMeta }) {
+  if (!assessment) return null
+  const isAccept = assessment.security_decision?.startsWith('ACCEPT')
+  const scenarioLabel = attackMeta
+    ? (ATTACK_SCENARIO_LABELS[attackMeta.attack_type] || attackMeta.attack_type)
+    : 'Clean session'
+  return (
+    <div className={styles.scenarioStrip}>
+      <span className={styles.scenarioLabel}>
+        SCENARIO <span className={styles.scenarioName}>{scenarioLabel}</span>
+      </span>
+      <span className={styles.scenarioDivider}>|</span>
+      <span className={`${styles.scenarioVerdict} ${isAccept ? styles.verdictAccept : styles.verdictReject}`}>
+        VERDICT <span className={styles.verdictWord}>{isAccept ? 'ACCEPT' : 'REJECT'}</span>
+      </span>
+      {attackMeta && (
+        <>
+          <span className={styles.scenarioDivider}>|</span>
+          <span className={`mono ${styles.scenarioMeta}`}>
+            {attackMeta.attack_type} · q={attackMeta.intensity?.toFixed(2)}
+          </span>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('control')
   const [assessment, setAssessment] = useState(null)
   const [sessionResult, setSessionResult] = useState(null)
   const [attackMeta, setAttackMeta] = useState(null)
   const [backendOnline, setBackendOnline] = useState(null)
+
+  function applyResult(result) {
+    setAssessment(result.assessment ?? null)
+    setSessionResult(result.sessionResult ?? null)
+    setAttackMeta(result.attackMeta ?? null)
+  }
 
   useEffect(() => {
     let mounted = true
@@ -50,6 +93,7 @@ export default function App() {
         if (mounted && cleanAssess.data && cleanSession.data) {
           setAssessment(cleanAssess.data)
           setSessionResult(cleanSession.data)
+          setAttackMeta(null)
         }
       }
     }
@@ -65,13 +109,10 @@ export default function App() {
   }, [])
 
   function handleResult(result) {
-    setAssessment(result.assessment)
-    setSessionResult(result.sessionResult)
-    setAttackMeta(result.attackMeta)
+    applyResult(result)
     setActiveTab('feed')
   }
 
-  const threatLevel = assessment?.threat_level
   const hasResult = Boolean(assessment)
 
   return (
@@ -79,7 +120,6 @@ export default function App() {
       <header className={styles.topBar}>
         <div className={styles.brand}>
           <span className={styles.brandName}>QDS Sentinel</span>
-          <span className={styles.brandLayer}>Layer 3 — Security Dashboard</span>
         </div>
 
         <div className={styles.systemStatus}>
@@ -98,18 +138,7 @@ export default function App() {
         </div>
 
         {hasResult && (
-          <div className={styles.statusStrip}>
-            <ThreatBadge level={threatLevel} />
-          </div>
-        )}
-
-        {attackMeta && (
-          <div className={styles.attackStrip}>
-            <span className={`mono ${styles.attackLabel}`}>ATTACK</span>
-            <span className="mono" style={{ fontSize: 10 }}>
-              {attackMeta.attack_type} · q={attackMeta.intensity.toFixed(2)} · {attackMeta.description}
-            </span>
-          </div>
+          <ScenarioStrip assessment={assessment} attackMeta={attackMeta} />
         )}
       </header>
 
@@ -121,10 +150,7 @@ export default function App() {
 
       {hasResult && (
         <div className={styles.decisionBar}>
-          <DecisionBanner
-            securityDecision={assessment.security_decision}
-            threatLevel={assessment.threat_level}
-          />
+          <DecisionBanner assessment={assessment} />
         </div>
       )}
 
@@ -152,7 +178,7 @@ export default function App() {
           <CircuitTrace sessionResult={sessionResult} assessment={assessment} />
         )}
         {activeTab === 'feed' && (
-          <ThreatFeed assessment={assessment} />
+          <ThreatFeed assessment={assessment} sessionResult={sessionResult} attackMeta={attackMeta} />
         )}
         {activeTab === 'metrics' && (
           <MetricsPanel assessment={assessment} />

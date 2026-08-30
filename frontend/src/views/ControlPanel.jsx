@@ -8,16 +8,17 @@ const BELL_STATES = ['PHI_PLUS', 'PHI_MINUS', 'PSI_PLUS', 'PSI_MINUS']
 const ALL_BASES = ['X', 'Y', 'Z']
 const VERIFICATION_MODES = ['direct', 'forwarded']
 const ATTACK_TYPES = [
-  { value: '', label: 'None (clean assessment)' },
-  { value: 'REPLAY', label: 'REPLAY' },
-  { value: 'FULL_FORGERY', label: 'FULL_FORGERY' },
-  { value: 'PARTIAL_FORGERY', label: 'PARTIAL_FORGERY' },
-  { value: 'CORRECTION_TAMPERING', label: 'CORRECTION_TAMPERING' },
-  { value: 'INTERCEPT_RESEND', label: 'INTERCEPT_RESEND' },
-  { value: 'CHANNEL_MANIPULATION', label: 'CHANNEL_MANIPULATION' },
-  { value: 'FIDELITY_DEGRADATION', label: 'FIDELITY_DEGRADATION' },
-  { value: 'BOB_REPUDIATION', label: 'BOB_REPUDIATION' },
+  { value: '', label: 'None \u2014 clean assessment' },
+  { value: 'REPLAY', label: 'Replay captured packet' },
+  { value: 'PARTIAL_FORGERY', label: 'Partial signature forgery' },
+  { value: 'CORRECTION_TAMPERING', label: 'Pauli correction tampering' },
+  { value: 'FULL_FORGERY', label: 'Full signature forgery' },
+  { value: 'INTERCEPT_RESEND', label: 'Intercept and resend' },
+  { value: 'CHANNEL_MANIPULATION', label: 'Channel manipulation' },
+  { value: 'FIDELITY_DEGRADATION', label: 'Fidelity degradation' },
+  { value: 'BOB_REPUDIATION', label: 'Bob repudiation' },
 ]
+
 
 function buildSimulationRequest(form) {
   return {
@@ -34,40 +35,6 @@ function buildSimulationRequest(form) {
   }
 }
 
-function syncAttackedSession(session, assessment, attackType, intensity, targetBasis) {
-  if (!session || !session.signature_positions) return session
-  const copy = JSON.parse(JSON.stringify(session))
-  const positions = copy.signature_positions
-
-  if (attackType === 'CORRECTION_TAMPERING' && assessment?.correction_consistency?.inconsistent_positions) {
-    const inconsistentSet = new Set(assessment.correction_consistency.inconsistent_positions)
-    for (const p of positions) {
-      if (inconsistentSet.has(p.index)) {
-        let tampered = 'I'
-        if (p.expected_correction === 'I') tampered = 'X'
-        else if (p.expected_correction === 'X') tampered = 'I'
-        else if (p.expected_correction === 'Z') tampered = 'X'
-        p.actual_correction = tampered
-        p.fidelity = 0.5
-        p.final_measured_bit = 1 - p.expected_bit
-        p.is_match = false
-      }
-    }
-  } else if (attackType === 'FIDELITY_DEGRADATION' && assessment?.fidelity_analysis) {
-    const minFid = assessment.fidelity_analysis.min_fidelity || 0.70
-    for (const p of positions) {
-      p.fidelity = minFid
-    }
-  } else if (attackType === 'PARTIAL_FORGERY' || attackType === 'INTERCEPT_RESEND' || attackType === 'CHANNEL_MANIPULATION' || attackType === 'BOB_REPUDIATION') {
-    const mismatchCount = Math.round(positions.length * (assessment?.qber_analysis?.global_mismatch_rate || 0))
-    for (let i = 0; i < Math.min(mismatchCount, positions.length); i++) {
-      positions[i].final_measured_bit = 1 - positions[i].expected_bit
-      positions[i].is_match = false
-    }
-  }
-
-  return copy
-}
 
 export default function ControlPanel({ onResult }) {
   const [form, setForm] = useState({
@@ -147,22 +114,20 @@ export default function ControlPanel({ onResult }) {
       return
     }
 
-    const assessment = form.attack_type
-      ? assessmentResult.data.assessment
-      : assessmentResult.data
-
-    const attackMeta = form.attack_type ? assessmentResult.data.attack_metadata : null
-
-    let finalSession = sessionResult.error ? null : sessionResult.data
-    if (finalSession && form.attack_type) {
-      finalSession = syncAttackedSession(finalSession, assessment, form.attack_type, parseFloat(form.intensity), form.target_basis)
+    if (form.attack_type) {
+      const data = assessmentResult.data
+      onResult({
+        assessment: data.assessment,
+        sessionResult: data.injected_session || null,
+        attackMeta: data.attack_metadata,
+      })
+    } else {
+      onResult({
+        assessment: assessmentResult.data,
+        sessionResult: sessionResult.error ? null : sessionResult.data,
+        attackMeta: null,
+      })
     }
-
-    onResult({
-      assessment,
-      sessionResult: finalSession,
-      attackMeta,
-    })
   }
 
   async function handleExample(fetchFn, label, simParams) {

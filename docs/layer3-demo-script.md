@@ -44,15 +44,16 @@ This document provides the click-by-click presentation script for demonstrating 
    - Attack Type: `None (clean assessment)`
 3. **Click**: `Run Assessment`.
 4. **Transition**: App automatically navigates to **Threat Feed**.
-   - *Point out*: Top decision banner displays `ACCEPT — verification_mode=direct, threshold=s_a=0.1, mismatch_rate=0.0000`.
-   - *Point out*: Threat Feed displays `NO_FINDINGS` with a muted sage color bar.
+   - *Point out*: Top header displays `SCENARIO: Clean session | VERDICT: ACCEPT`.
+   - *Point out*: Decision banner displays structured fields (`MODE: DIRECT`, `OBSERVED MISMATCH: 0 / 16 (0.0000)`, `THRESHOLD: s_a = 0.1000`, `MEAN FIDELITY: 1.0000`).
+   - *Point out*: Threat Feed displays `NO_ANOMALIES_DETECTED` with the compact session summary rail.
 5. **Switch to**: `Circuit Trace` tab.
    - *Point out*: All 16 positions show `fidelity = 1.0000`, `Exp. Corr. == Act. Corr.`, and `Match = OK`.
 6. **Switch to**: `Security Metrics` tab.
-   - *Point out*: Both deterministic indicators (`SHA-256 Digest` and `Replay Detection`) show green `MATCH` and `UNIQUE`. Bob's direct mismatch rate is `0.0000`.
+   - *Point out*: Both deterministic indicators (`PAYLOAD DIGEST CONSISTENCY` and `Replay Detection`) show green `MATCH` and `UNIQUE`. Bob's direct mismatch rate is `0.0000`.
 
 *Speaker Script*:
-> "Here we establish our trusted quantum baseline. Alice prepares 16 single-qubit Pauli eigenstates teleported through Bell pairs. Bob receives the photons, applies feedforward Pauli corrections, and observes zero bit mismatches and unit fidelity. Layer 2 confirms acceptance under our threshold."
+> "Here we establish our trusted quantum baseline. Alice prepares 16 single-qubit Pauli eigenstates teleported through Bell pairs. Bob receives the photons, applies feedforward Pauli corrections, and observes zero bit mismatches and unit fidelity. Layer 2 confirms acceptance under our direct threshold."
 
 ---
 
@@ -61,26 +62,28 @@ This document provides the click-by-click presentation script for demonstrating 
 1. **Navigate to**: `Control Panel` tab.
 2. **Set Parameters**:
    - Keep message and sender/recipient as is.
-   - Attack Type: Select `PARTIAL_FORGERY`.
+   - Attack Type: Select `Partial signature forgery`.
    - Intensity slider ($q$): `0.25` ($25\%$ of signature bits corrupted).
 3. **Click**: `Run Attack Simulation`.
 4. **Inspect Threat Feed**:
-   - *Point out*: Decision banner turns terracotta: `REJECT — mismatch_rate=0.2500`.
-   - *Point out*: Finding item appears with quantitative metric: `QBER_ANOMALY [SUSPICIOUS] — observed mismatch rate 0.2500 exceeds q_alert threshold 0.1100`.
+   - *Point out*: Top header displays `SCENARIO: Partial signature forgery | VERDICT: REJECT | PARTIAL_FORGERY · q=0.25`.
+   - *Point out*: Decision banner turns terracotta: `REJECT` with observed mismatch exceeding threshold.
+   - *Point out*: Structured finding card outputs: `THREAT: QBER_ANOMALY [SUSPICIOUS]`, `OBSERVED EVIDENCE: observed mismatch rate ...`, `AUTHORITY: Statistical hypothesis test (Amiri et al. 2016)`.
 5. **Switch to**: `Security Metrics` tab.
-   - *Point out*: `global_mismatch_rate` is `0.2500` (flagged in red). Bob's direct half reflects the error rate, exceeding $s_a=0.10$.
+   - *Point out*: `observed_mismatch_rate` is `0.2500` (flagged). Bob's direct half reflects the error rate, exceeding $s_a=0.10$.
 
 *Speaker Script*:
-> "Now Eve attempts a partial forgery by flipping 25% of the quantum signature positions. The dashboard immediately alerts with a SUSPICIOUS verdict. Notice that the finding is not a vague warning—it outputs the exact measured QBER of 0.2500 against the 0.1100 alert threshold."
+> "Now Eve attempts a partial forgery by flipping 25% of the quantum signature positions. The dashboard immediately alerts with a SUSPICIOUS verdict. Notice that the finding is not a vague warning—it outputs the exact measured mismatch rate against the alert threshold and provides an evidence chain."
 
 ---
 
 ### Beat 3: Replay Attack Injection (`REJECT`)
 
 1. **Navigate to**: `Control Panel` tab.
-2. **Action**: Resubmit the exact same session parameters without changing the sequence number (or click the **Replay attack** button).
-3. **Click**: `Run Assessment`.
+2. **Action**: Resubmit the exact same session parameters without changing the sequence number (or select `Replay captured packet`).
+3. **Click**: `Run Attack Simulation` (or `Run Assessment`).
 4. **Inspect Threat Feed**:
+   - *Point out*: Top header displays `SCENARIO: Replay captured packet | VERDICT: REJECT`.
    - *Point out*: Threat Level elevates to `CRITICAL`.
    - *Point out*: Finding says `REPLAY_ATTACK [CRITICAL] — fingerprint ... already recorded in the replay ledger.`
 5. **Switch to**: `Security Metrics` tab.
@@ -96,7 +99,7 @@ This document provides the click-by-click presentation script for demonstrating 
 
 1. **Navigate to**: `Control Panel` tab.
 2. **Set Parameters**:
-   - Attack Type: Select `CORRECTION_TAMPERING`.
+   - Attack Type: Select `Pauli correction tampering`.
    - Intensity: `1.0`.
 3. **Click**: `Run Attack Simulation`.
 4. **Switch to**: `Circuit Trace` tab.

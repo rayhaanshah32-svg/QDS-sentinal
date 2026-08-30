@@ -182,8 +182,8 @@ export default function ExperimentReport() {
               tick={{ fontSize: 10, fontFamily: 'var(--font-mono)', fill: 'var(--text-muted)' }}
             />
             <Tooltip content={<CustomTooltip />} />
-            <ReferenceLine y={0.10} stroke="hsl(38, 62%, 44%)" strokeDasharray="4 3" label={{ value: 's_a=0.10', position: 'right', fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'hsl(38, 62%, 44%)' }} />
-            <ReferenceLine y={0.20} stroke="hsl(28, 60%, 46%)" strokeDasharray="4 3" label={{ value: 's_v=0.20', position: 'right', fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'hsl(28, 60%, 46%)' }} />
+            <ReferenceLine y={0.10} stroke="hsl(38, 62%, 44%)" strokeDasharray="4 3" label={{ value: 's_a=0.10 (direct auth)', position: 'right', fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'hsl(38, 62%, 44%)' }} />
+            <ReferenceLine y={0.20} stroke="hsl(28, 60%, 46%)" strokeDasharray="4 3" label={{ value: 's_v=0.20 (forwarded verif)', position: 'right', fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'hsl(28, 60%, 46%)' }} />
             <Line
               type="monotone"
               dataKey="csv_rate"
@@ -214,11 +214,15 @@ export default function ExperimentReport() {
             <span className={styles.dotSquare} /> Live run
           </span>
           <span className={styles.legendItem}>
-            <span className={styles.lineAdvisory} /> s_a=0.10 (advisory)
+            <span className={styles.lineAdvisory} /> s_a=0.10 (direct authentication threshold)
           </span>
           <span className={styles.legendItem}>
-            <span className={styles.lineSuspicious} /> s_v=0.20 (suspicious)
+            <span className={styles.lineSuspicious} /> s_v=0.20 (forwarded verification threshold)
           </span>
+        </div>
+
+        <div className={styles.chartScientificNote}>
+          Points show simulated telemetry under a fixed seed; they are not measured physical-channel results.
         </div>
       </div>
 

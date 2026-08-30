@@ -14,8 +14,8 @@ export default function DigestBadge({ digestCheck }) {
         }
       </div>
       <div className={styles.content}>
-        <span className={styles.label}>SHA-256 Digest</span>
-        <span className={styles.status}>{ok ? 'MATCH' : 'MISMATCH — AUTHORITATIVE REJECT'}</span>
+        <span className={styles.label}>PAYLOAD DIGEST CONSISTENCY</span>
+        <span className={styles.status}>{ok ? 'MATCH (VERIFIED)' : 'MISMATCH — AUTHORITATIVE REJECT'}</span>
         {!ok && (
           <div className={styles.hashes}>
             <div className="mono">

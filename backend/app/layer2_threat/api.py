@@ -107,6 +107,9 @@ class AttackSimulateResponse(BaseModel):
     attack_metadata: AttackMetadata = Field(
         ..., description="Ground-truth attack metadata"
     )
+    injected_session: ProtocolSessionResult = Field(
+        ..., description="The post-attack ProtocolSessionResult that Layer 2 actually assessed"
+    )
     assessment: ThreatAssessment = Field(
         ..., description="Schema-valid ThreatAssessment output"
     )
@@ -357,32 +360,69 @@ def attack_simulate_endpoint(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Layer 1 simulation error: {exc}")
 
-    injected_session = inject_attack(
-        session=session,
-        attack_type=request.attack_type,
-        intensity=request.intensity,
-        target_basis=request.target_basis,
-        seed=sim.seed,
-    )
+    from app.schemas.telemetry import AttackType as AT
+    import uuid
+
+    if request.attack_type == AT.REPLAY:
+        injected_session = session
+        replay_meta = AttackMetadata(
+            attack_id=str(uuid.uuid4()),
+            attack_type=AT.REPLAY,
+            intensity=1.0,
+            seed=sim.seed,
+            description=f"Stateful replay: exact packet re-submitted (session={sim.session_id}, nonce={sim.nonce}, seq={sim.sequence_number})",
+        )
+    else:
+        injected_session = inject_attack(
+            session=session,
+            attack_type=request.attack_type,
+            intensity=request.intensity,
+            target_basis=request.target_basis,
+            seed=sim.seed,
+        )
+        replay_meta = None
 
     try:
         cfg = _build_config(request.verification_mode, request.s_a, request.s_v, request.e_honest)
-        assessment = assess_session(
-            injected_session,
-            config=cfg,
-            ledger=default_ledger,
-            expected_sender_id=request.expected_sender_id,
-            expected_recipient_id=request.expected_recipient_id,
-            requested_verifier_id=request.requested_verifier_id,
-        )
+
+        if request.attack_type == AT.REPLAY:
+            assess_session(
+                injected_session,
+                config=cfg,
+                ledger=default_ledger,
+                expected_sender_id=request.expected_sender_id,
+                expected_recipient_id=request.expected_recipient_id,
+                requested_verifier_id=request.requested_verifier_id,
+            )
+            assessment = assess_session(
+                injected_session,
+                config=cfg,
+                ledger=default_ledger,
+                expected_sender_id=request.expected_sender_id,
+                expected_recipient_id=request.expected_recipient_id,
+                requested_verifier_id=request.requested_verifier_id,
+            )
+        else:
+            assessment = assess_session(
+                injected_session,
+                config=cfg,
+                ledger=default_ledger,
+                expected_sender_id=request.expected_sender_id,
+                expected_recipient_id=request.expected_recipient_id,
+                requested_verifier_id=request.requested_verifier_id,
+            )
+
+        final_meta = replay_meta if replay_meta else injected_session.attack_metadata
         return AttackSimulateResponse(
-            attack_metadata=injected_session.attack_metadata,
+            attack_metadata=final_meta,
+            injected_session=injected_session,
             assessment=assessment,
         )
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Layer 2 assessment error: {exc}")
+
 
 
 @router.get(

@@ -70,10 +70,13 @@ export default function MetricsPanel({ assessment }) {
       <div className={styles.panelsGrid}>
         <div className={`panel ${styles.metricPanel}`}>
           <div className={`panel-title ${styles.panelTitleRow}`}>
-            QBER Analysis
+            Signature Mismatch Rate
             <FlagIndicator raised={qber.exceeds_threshold} />
           </div>
-          <MetricRow label="global_mismatch_rate" value={qber.global_mismatch_rate.toFixed(4)} flagged={qber.exceeds_threshold} />
+          <div className={styles.disclaimerNote}>
+            Calculated from simulated signature telemetry, not direct physical-channel QBER measurements.
+          </div>
+          <MetricRow label="observed_mismatch_rate" value={qber.global_mismatch_rate.toFixed(4)} flagged={qber.exceeds_threshold} />
           <MetricRow label="alert_threshold (q_alert)" value={qber.alert_threshold.toFixed(4)} />
           <MetricRow label="total_positions" value={qber.total_positions} />
           <MetricRow label="hoeffding_fp_bound" value={qber.hoeffding_false_positive_bound.toFixed(6)} />
@@ -100,8 +103,11 @@ export default function MetricsPanel({ assessment }) {
 
         <div className={`panel ${styles.metricPanel}`}>
           <div className={`panel-title ${styles.panelTitleRow}`}>
-            Correction Consistency
+            Pauli Correction Consistency
             <FlagIndicator raised={corr.flag_raised} />
+          </div>
+          <div className={styles.disclaimerNote}>
+            Feedforward Pauli correction integrity across classical transmission.
           </div>
           <MetricRow label="inconsistency_rate" value={corr.inconsistency_rate.toFixed(4)} flagged={corr.flag_raised} />
           <MetricRow label="tamper_threshold" value={corr.tamper_threshold.toFixed(4)} />
@@ -118,8 +124,11 @@ export default function MetricsPanel({ assessment }) {
 
         <div className={`panel ${styles.metricPanel}`}>
           <div className={`panel-title ${styles.panelTitleRow}`}>
-            Fidelity Analysis
+            Teleportation Fidelity Monitor
             <FlagIndicator raised={fid.flag_raised} />
+          </div>
+          <div className={styles.disclaimerNote}>
+            Simulated state reconstruction fidelity across all teleported carriers.
           </div>
           <MetricRow label="average_fidelity" value={fid.average_fidelity.toFixed(4)} />
           <MetricRow label="min_fidelity" value={fid.min_fidelity.toFixed(4)} flagged={fid.flag_raised} />
@@ -137,13 +146,13 @@ export default function MetricsPanel({ assessment }) {
 
       <div className={`panel ${styles.bcPanel}`}>
         <div className={`panel-title ${styles.panelTitleRow}`}>
-          Bob / Charlie Mismatch Metrics
+          Bob / Charlie Mismatch Metrics (Isolated Channels)
           <span className={styles.splitNote}>split: {bc.splitting_method}</span>
         </div>
         <div className={styles.bcColumns}>
           <div className={`${styles.bcColumn} ${bc.direct_exceeds_threshold ? styles.bcColumnFlagged : ''}`}>
             <div className={styles.bcColumnHeader}>
-              <span>Bob (direct)</span>
+              <span>Bob (direct authentication)</span>
               <FlagIndicator raised={bc.direct_exceeds_threshold} />
             </div>
             <MetricRow label="positions" value={bc.direct_positions_count} />
@@ -154,21 +163,21 @@ export default function MetricsPanel({ assessment }) {
               flagged={bc.direct_exceeds_threshold}
             />
             <MetricRow
-              label="confidence_upper_bound"
-              value={bc.direct_confidence_upper_bound.toFixed(4)}
-            />
-            <MetricRow label="e_upper" value={bc.direct_e_upper.toFixed(4)} />
-            <MetricRow
               label="threshold (s_a)"
               value={bc.direct_threshold_s_a.toFixed(4)}
             />
+            <MetricRow
+              label="confidence_upper_bound"
+              value={`${bc.direct_confidence_upper_bound.toFixed(4)} (uncertainty)`}
+            />
+            <MetricRow label="e_upper" value={bc.direct_e_upper.toFixed(4)} />
           </div>
 
           <div className={styles.bcDivider} />
 
           <div className={`${styles.bcColumn} ${bc.forwarded_exceeds_threshold ? styles.bcColumnFlagged : ''}`}>
             <div className={styles.bcColumnHeader}>
-              <span>Charlie (forwarded)</span>
+              <span>Charlie (forwarded verification)</span>
               <FlagIndicator raised={bc.forwarded_exceeds_threshold} />
             </div>
             <MetricRow label="positions" value={bc.forwarded_positions_count} />
@@ -179,14 +188,14 @@ export default function MetricsPanel({ assessment }) {
               flagged={bc.forwarded_exceeds_threshold}
             />
             <MetricRow
-              label="confidence_upper_bound"
-              value={bc.forwarded_confidence_upper_bound.toFixed(4)}
-            />
-            <MetricRow label="e_upper" value={bc.forwarded_e_upper.toFixed(4)} />
-            <MetricRow
               label="threshold (s_v)"
               value={bc.forwarded_threshold_s_v.toFixed(4)}
             />
+            <MetricRow
+              label="confidence_upper_bound"
+              value={`${bc.forwarded_confidence_upper_bound.toFixed(4)} (uncertainty)`}
+            />
+            <MetricRow label="e_upper" value={bc.forwarded_e_upper.toFixed(4)} />
           </div>
         </div>
       </div>

@@ -278,12 +278,11 @@ def test_attack_simulate_top_level_keys_separate():
     assert response.status_code == 200
     data = response.json()
 
-    # Top-level keys MUST be separate, never merged
     assert "attack_metadata" in data
+    assert "injected_session" in data
     assert "assessment" in data
-    assert len(data.keys()) == 2
+    assert len(data.keys()) == 3
 
-    # Assessment section alone MUST be schema-valid ThreatAssessment
     assessment = data["assessment"]
     assert "threat_level" in assessment
     assert "security_decision" in assessment
@@ -291,11 +290,79 @@ def test_attack_simulate_top_level_keys_separate():
     assert "qber_analysis" in assessment
     assert "bob_charlie_metrics" in assessment
 
-    # Ground truth metadata section
     meta = data["attack_metadata"]
     assert meta["attack_type"] == "PARTIAL_FORGERY"
     assert meta["intensity"] == 0.25
     assert meta["seed"] == 42
+
+    injected = data["injected_session"]
+    assert "signature_positions" in injected
+    assert len(injected["signature_positions"]) == 16
+
+
+def test_attack_simulate_injected_session_consistency():
+    req = {
+        "simulation": {
+            "message": "TEST_CONSISTENCY_CHECK",
+            "sender_id": "alice",
+            "recipient_id": "bob",
+            "signature_length": 16,
+            "seed": 42,
+            "bell_state": "PHI_PLUS",
+            "bases_allowed": ["X", "Y", "Z"],
+            "session_id": "const-001",
+            "nonce": "nonce-const-42",
+            "sequence_number": 1,
+        },
+        "attack_type": "CORRECTION_TAMPERING",
+        "intensity": 1.0,
+        "verification_mode": "direct",
+    }
+
+    response = client.post("/api/v1/layer2/attack-simulate", json=req)
+    assert response.status_code == 200
+    data = response.json()
+
+    injected_positions = data["injected_session"]["signature_positions"]
+    tampered_indices = [
+        p["index"] for p in injected_positions
+        if p["actual_correction"] != p["expected_correction"]
+    ]
+
+    assessed_indices = data["assessment"]["correction_consistency"]["inconsistent_positions"]
+    assert tampered_indices == assessed_indices
+    assert len(tampered_indices) > 0
+    assert data["assessment"]["threat_level"] == "CRITICAL"
+
+
+def test_attack_simulate_replay_stateful():
+    req = {
+        "simulation": {
+            "message": "TEST_REPLAY_SIMULATION",
+            "sender_id": "alice",
+            "recipient_id": "bob",
+            "signature_length": 16,
+            "seed": 88,
+            "bell_state": "PHI_PLUS",
+            "bases_allowed": ["X", "Y", "Z"],
+            "session_id": "replay-sim-001",
+            "nonce": "nonce-replay-88",
+            "sequence_number": 1,
+        },
+        "attack_type": "REPLAY",
+        "intensity": 1.0,
+        "verification_mode": "direct",
+    }
+
+    response = client.post("/api/v1/layer2/attack-simulate", json=req)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["assessment"]["threat_level"] == "CRITICAL"
+    assert data["assessment"]["replay_detection"]["is_replay"] is True
+    assert "REJECT" in data["assessment"]["security_decision"]
+    assert any("REPLAY_ATTACK" in f for f in data["assessment"]["findings"])
+    assert data["attack_metadata"]["attack_type"] == "REPLAY"
 
 
 def test_invalid_threshold_chain_human_readable_422():
@@ -313,10 +380,11 @@ def test_invalid_threshold_chain_human_readable_422():
             "sequence_number": 1,
         },
         "s_a": 0.30,
-        "s_v": 0.20,  # s_a > s_v is invalid
+        "s_v": 0.20,
     }
     response = client.post("/api/v1/layer2/assess", json=req)
     assert response.status_code == 422
     detail = response.json()["detail"]
     assert "Threshold ordering violated" in detail
     assert "must be strictly less than" in detail
+

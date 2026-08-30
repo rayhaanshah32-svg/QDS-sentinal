@@ -85,6 +85,14 @@
   border-top: 2px dashed hsl(28, 60%, 46%);
 }
 
+.chartScientificNote {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  margin-top: 4px;
+}
+
 .sweepControls {
   display: flex;
   flex-direction: column;

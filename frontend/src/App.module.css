@@ -104,21 +104,57 @@
   white-space: nowrap;
 }
 
-.attackStrip {
+.scenarioStrip {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 3px 10px;
-  background: var(--color-suspicious-bg);
-  border: 1px solid hsl(28, 46%, 86%);
+  padding: 4px 12px;
+  background: var(--bg-chrome);
+  border: var(--border);
   border-radius: var(--radius-md);
+  margin-left: auto;
+  font-size: 11px;
+  font-family: var(--font-mono);
 }
 
-.attackLabel {
-  font-size: 9px;
+.scenarioLabel {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.scenarioName {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.scenarioDivider {
+  color: var(--border-color);
+  user-select: none;
+}
+
+.scenarioVerdict {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.verdictWord {
   font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--color-suspicious);
+}
+
+.verdictAccept {
+  color: var(--color-accept);
+}
+
+.verdictReject {
+  color: var(--color-critical);
+}
+
+.scenarioMeta {
+  font-size: 10px;
+  color: var(--text-secondary);
 }
 
 .decisionBar {
